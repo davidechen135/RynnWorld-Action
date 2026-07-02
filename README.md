@@ -1,2 +1,2 @@
 # RynnWorld-Teleop
-RynnWorld-4D: 4D Embodied World Models for Robotic Manipulation
+RynnWorld-Teleop: A Digital Teleoperation System for Scalable Robot Learning via Autoregressive Egocentric Video Generation
