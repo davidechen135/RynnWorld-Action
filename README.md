@@ -1,2 +1,2 @@
 # RynnWorld-Teleop
-RynnWorld-Teleop: A Digital Teleoperation System for Scalable Robot Learning via Autoregressive Egocentric Video Generation
+RynnWorld-Teleop: Action-conditioned World Model as Digital Teleoperation System
