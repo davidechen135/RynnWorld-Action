@@ -1,2 +1,2 @@
 # RynnWorld-Teleop
-RynnWorld-Teleop: Action-conditioned World Model as Digital Teleoperation System
+RynnWorld-Teleop: An Action-conditioned World Model for Digital Teleoperation
