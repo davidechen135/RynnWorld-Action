@@ -118,7 +118,7 @@ class I2VDataset(Dataset):
             video_frames = self.video_transform(video_frames)
             video_frames = video_frames.permute(1, 0, 2, 3) 
             video_frames = video_frames.unsqueeze(0) 
-            encoded_video = self.encode_video(video_frames).cpu().squeeze(0) # 移除 batch 维度
+            encoded_video = self.encode_video(video_frames).cpu().squeeze(0)
             save_file({"encoded_video": encoded_video}, encoded_video_path)
 
         _, image = self.preprocess(None, image_path)
@@ -270,7 +270,7 @@ class EgoVerseDataset22(Dataset):
                 rank = os.environ.get('RANK', '0')
                 if i < max_retries - 1:
                     print(f"[Rank {rank}] Warning: Load failed (attempt {i+1}/{max_retries}). Retrying... Path: {video_latent_path}")
-                    time.sleep(1) # 等待1秒后重试
+                    time.sleep(1)
                 else:
                     print(f"[Rank {rank}] ERROR: Permanent failure on {video_latent_path}. Skipping to random sample.")
                     return self.__getitem__(random.randint(0, len(self) - 1))

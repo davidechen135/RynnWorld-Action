@@ -161,11 +161,11 @@ class Trainer:
         from core.finetune.datasets import I2VDataset
         if self.args.model_type == "wan-i2v":
             self.dataset = I2VDataset(
-                data_root=self.args.validation_dir,  # 假设数据集根目录是 validation_dir
-                max_num_frames=self.args.train_resolution[0], # 从 train_resolution 中获取帧数
-                height=self.args.train_resolution[1],         # 从 train_resolution 中获取高度
-                width=self.args.train_resolution[2],          # 从 train_resolution 中获取宽度
-                device=self.accelerator.device,               # 从 accelerator 获取设备信息
+                data_root=self.args.validation_dir,
+                max_num_frames=self.args.train_resolution[0],
+                height=self.args.train_resolution[1],
+                width=self.args.train_resolution[2],
+                device=self.accelerator.device,
                 trainer=self  
             )
         else:
@@ -354,25 +354,18 @@ class Trainer:
     def prepare_trackers(self) -> None:
         logger.info("Initializing trackers")
 
-        # 为了确保只在主进程上进行初始化，避免创建多个tracker或出现竞争
         if self.accelerator.is_main_process:
             tracker_name = self.args.tracker_name or "finetrainers-experiment"
-            
-            # 1. 获取原始的配置字典
+
             original_config = self.args.model_dump()
-            
-            # 2. 创建一个新的、净化过的字典
+
             sanitized_config = {}
             for key, value in original_config.items():
-                # 检查值的类型是否是TensorBoard支持的基本类型
                 if isinstance(value, (int, float, str, bool, torch.Tensor)):
-                    # 如果是，直接保留
                     sanitized_config[key] = value
                 else:
-                    # 如果是复杂类型（如 Path, Tuple, List等），将其转换为字符串
                     sanitized_config[key] = str(value)
 
-            # 3. 将这个完全‘净化’过的字典传递给 init_trackers
             self.accelerator.init_trackers(tracker_name, config=sanitized_config)
 
     def train(self) -> None:

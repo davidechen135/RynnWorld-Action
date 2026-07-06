@@ -5435,8 +5435,8 @@ def main():
             cprint(
                 "[neg_prompt] WARNING: negative_prompt is empty — CFG uncond "
                 "branch will use empty T5 embed. If REAL_GUIDANCE_SCALE>0 this "
-                "AMPLIFIES cond bias (色调艳丽 etc.) instead of cancelling it. "
-                "For Wan2.2 DMD set NEGATIVE_PROMPT='色调艳丽,过曝,...' (Wan rich neg).",
+                "AMPLIFIES cond bias (vivid colors etc.) instead of cancelling it. "
+                "For Wan2.2 DMD set NEGATIVE_PROMPT to a Wan-style rich negative prompt.",
                 "yellow" if args.real_guidance_scale > 0 else "cyan",
             )
     _neg_text_inputs = tokenizer(
@@ -5526,7 +5526,7 @@ def main():
     # Treat 0 as "no cap" so the launcher's MAX_SAMPLES=0 default uses the
     # whole dataset. Anything > 0 caps as before. Catches the foot-gun where
     # the launcher's default was 100, which sharded across 8 ranks left only
-    # 12-13 clips per rank and mode-collapsed B+ 方案's warmup.
+    # 12-13 clips per rank and mode-collapsed Plan B+'s warmup.
     _cap = args.max_samples if (args.max_samples and args.max_samples > 0) else None
     if args.use_control_dataset:
         dataset = EgoVerseControlDataset(
@@ -5550,7 +5550,7 @@ def main():
     dataset.samples = dataset.samples[rank::world_size]
     if is_main:
         cprint(f"Dataset size (this rank): {len(dataset)}", "green")
-        # Fail-loud guard for the B/B+ 方案 mode-collapse trap: when warmup
+        # Fail-loud guard for the B/B+ plan mode-collapse trap: when warmup
         # uses LatentDataset directly (--ode_target_kind gt|v_flow), too few
         # samples per rank overfits within a few hundred steps and decodes
         # become solid-colour noise. 1000 samples gives ~125/rank on 8 ranks,
@@ -6298,8 +6298,8 @@ def main():
             # Same step-boundary fix applies to extras' reference condition.
             #
             # Reference-row source picked from `args.ode_target_kind`:
-            #   teacher (A 方案): pull x0_teacher from ode_dataset (disk pair cache)
-            #   gt      (B 方案): pull video_latent from `dataset` (DMD GT clips)
+            #   teacher (Plan A): pull x0_teacher from ode_dataset (disk pair cache)
+            #   gt      (Plan B): pull video_latent from `dataset` (DMD GT clips)
             # In B mode `ode_dataset` stays None (we never load it), so the
             # teacher path's `ode_dataset is not None` guard naturally bypasses
             # — we route to the GT branch via ode_target_kind instead.

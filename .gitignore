@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Training artifacts
+training/
+outputs/
+results/
+runs/
+wandb/
+logs/
+*.log
+
+# Model weights / caches
+pretrained/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+!example/**/*.safetensors
+
+# Editor / IDE
+.qoder/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local

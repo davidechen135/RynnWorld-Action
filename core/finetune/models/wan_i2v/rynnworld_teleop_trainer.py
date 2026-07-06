@@ -325,7 +325,6 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
         is_zero3 = ds_plugin is not None and ds_plugin.zero_stage == 3
         if is_zero3:
             import deepspeed
-            # ZeRO-3 必须在 Init 环境下加载，实现参数的自动分片
             with deepspeed.zero.Init(config_dict_or_path=ds_plugin.deepspeed_config):
                 components.text_encoder = UMT5EncoderModel.from_pretrained(model_path, subfolder="text_encoder")
                 components.vae = AutoencoderKLWan.from_pretrained(model_path, subfolder="vae")
@@ -804,7 +803,6 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
         )
         if hasattr(self.components, "text_encoder"):
             self.components.text_encoder.to("cpu")
-            # 如果后续完全不用了，甚至可以 del self.components.text_encoder
         
         if hasattr(self.components, "vae"):
             self.components.vae.to("cpu")
@@ -996,14 +994,11 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
     
         import time
         
-        # 用于计算瞬时吞吐量
         step_start_time = time.time()
         
-        # 用于计算平均吞吐量
         total_samples_processed = 0
         training_start_time = time.time()
         
-        # 在主进程上打印表头
         if self.accelerator.is_main_process:
             print("\n" + "="*80)
             print(f"{'Global Step':<15} | {'Samples This Step':<20} | {'Instant Throughput':<25} | {'Average Throughput':<25}")
@@ -1036,9 +1031,7 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
                         if accelerator.distributed_type == DistributedType.DEEPSPEED:
                             # grad_norm = self.components.transformer.get_global_grad_norm()
                             grad_norm_high = self.components.high_noise_model.get_global_grad_norm()
-                            # grad_norm_low = self.components.low_noise_model.get_global_grad_norm()
-                            # grad_norm = (grad_norm_high**2 + grad_norm_low**2)**0.5 # 合并范数
-                            grad_norm = (grad_norm_high**2)**0.5 # 合并范数
+                            grad_norm = (grad_norm_high**2)**0.5
                             # In some cases the grad norm may not return a float
                             if torch.is_tensor(grad_norm):
                                 grad_norm = grad_norm.item()
@@ -1069,19 +1062,16 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
                     self._maybe_save_checkpoint(global_step)
 
                     samples_in_this_step = batch['encoded_videos'].shape[0] * self.accelerator.num_processes
-                    
-                    # 2. 计算瞬时吞吐量
+
                     step_end_time = time.time()
                     step_duration = step_end_time - step_start_time
                     instant_throughput = samples_in_this_step / step_duration if step_duration > 0 else 0
-                    step_start_time = step_end_time # 重置计时器
+                    step_start_time = step_end_time
 
-                    # 3. 计算平均吞吐量
                     total_samples_processed += samples_in_this_step
                     total_training_time = time.time() - training_start_time
                     average_throughput = total_samples_processed / total_training_time if total_training_time > 0 else 0
 
-                    # 4. 在主进程上打印结果 (每10步打印一次，避免刷屏)
                     if self.accelerator.is_main_process and (global_step % 10 == 0 or global_step == 1):
                         print(f"{global_step:<15} | {samples_in_this_step:<20} | {instant_throughput:<25.2f} samples/sec | {average_throughput:<25.2f} samples/sec")
 

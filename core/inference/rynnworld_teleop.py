@@ -22,7 +22,7 @@ from diffusers.utils import (
     export_to_video,
     load_image,
     load_video,
-    replace_example_docstring,  # <-- 添加这个
+    replace_example_docstring,
 )
 from termcolor import cprint
 logging.basicConfig(level=logging.INFO)

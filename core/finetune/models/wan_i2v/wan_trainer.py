@@ -2,10 +2,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from diffusers import (
-    AutoencoderKLWan,              # 使用标准的 VAE
+    AutoencoderKLWan,
     UniPCMultistepScheduler,
-    WanImageToVideoPipeline,    # 使用标准的 Pipeline
-    WanTransformer3DModel,      # 使用标准的 Transformer
+    WanImageToVideoPipeline,
+    WanTransformer3DModel,
 )
 from diffusers.models.embeddings import get_3d_rotary_pos_embed
 from PIL import Image
@@ -144,7 +144,6 @@ class WanI2VTrainer(Trainer):
 
     @override
     def __prepare_saving_loading_hooks(self, transformer_lora_config):
-        # 创建自定义的保存和加载钩子，以便 `accelerator.save_state(...)` 以我们期望的格式序列化
         def save_model_hook(models: list, weights: list, output_dir: str):
             if self.accelerator.is_main_process:
                 unwrapped_high_noise_model = unwrap_model(self.accelerator, self.components.high_noise_model)
@@ -443,11 +442,11 @@ class WanI2VTrainer(Trainer):
         from core.finetune.datasets import I2VDataset
         if self.args.model_type == "wan-i2v":
             self.dataset = I2VDataset(
-                data_root=self.args.validation_dir,  # 假设数据集根目录是 validation_dir
-                max_num_frames=self.args.train_resolution[0], # 从 train_resolution 中获取帧数
-                height=self.args.train_resolution[1],         # 从 train_resolution 中获取高度
-                width=self.args.train_resolution[2],          # 从 train_resolution 中获取宽度
-                device=self.accelerator.device,               # 从 accelerator 获取设备信息
+                data_root=self.args.validation_dir,
+                max_num_frames=self.args.train_resolution[0],
+                height=self.args.train_resolution[1],
+                width=self.args.train_resolution[2],
+                device=self.accelerator.device,
                 trainer=self  
             )
         else:
@@ -775,7 +774,7 @@ class WanI2VTrainer(Trainer):
                             # grad_norm = self.components.transformer.get_global_grad_norm()
                             grad_norm_high = self.components.high_noise_model.get_global_grad_norm()
                             grad_norm_low = self.components.low_noise_model.get_global_grad_norm()
-                            grad_norm = (grad_norm_high**2 + grad_norm_low**2)**0.5 # 合并范数
+                            grad_norm = (grad_norm_high**2 + grad_norm_low**2)**0.5
                             # In some cases the grad norm may not return a float
                             if torch.is_tensor(grad_norm):
                                 grad_norm = grad_norm.item()
@@ -850,7 +849,7 @@ class WanI2VTrainer(Trainer):
         try:
             start_image_pil = Image.open(image_path)
             if start_image_pil.mode != 'RGB':
-                print(f"图片模式为 {start_image_pil.mode}，将转换为 RGB...")
+                print(f"Image mode is {start_image_pil.mode}, converting to RGB...")
                 start_image_pil = start_image_pil.convert('RGB')
             cprint("start inference...",'green')
             self.inference(
@@ -940,7 +939,7 @@ class WanI2VTrainer(Trainer):
         vae_scale_factor_spatial = 8
         latent_height = height // vae_scale_factor_spatial
         latent_width = width // vae_scale_factor_spatial
-        vae_scale_factor_temporal = 4 # 直接写死或者从config读取
+        vae_scale_factor_temporal = 4
         num_latent_frames = (num_frames - 1) // vae_scale_factor_temporal + 1
 
         latents_shape = (1, self.components.vae.config.z_dim, num_latent_frames, latent_height, latent_width)
@@ -960,7 +959,7 @@ class WanI2VTrainer(Trainer):
         latent_condition = (latent_condition - latents_mean) / latents_std
 
         mask_lat_size = torch.ones(1, 1, num_frames, latent_height, latent_width, device=device, dtype=model_dtype)
-        mask_lat_size[:, :, 1:] = 0 # 只有第一帧是1
+        mask_lat_size[:, :, 1:] = 0
         
         first_frame_mask = mask_lat_size[:, :, 0:1]
         first_frame_mask = torch.repeat_interleave(first_frame_mask, dim=2, repeats=vae_scale_factor_temporal)
@@ -991,7 +990,7 @@ class WanI2VTrainer(Trainer):
             if current_model_on_gpu is not target_model:
                 cprint(f"Switching model for timestep {t.item()}", "yellow")
                 if current_model_on_gpu is not None:
-                    current_model_on_gpu.to("cpu") # 将旧模型移至CPU
+                    current_model_on_gpu.to("cpu")
                 target_model.to(device, dtype=model_dtype)
                 current_model_on_gpu = target_model
                 torch.cuda.empty_cache()
