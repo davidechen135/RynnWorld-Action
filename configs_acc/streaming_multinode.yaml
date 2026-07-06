@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# accelerate_config_multinode.yaml — MULTI-NODE accelerate config for
+# streaming control distill v2 wrapper.
+#
+# 跟 single-node accelerate_config.yaml 的关键差别:
+# ──────────────────────────────────────────────────
+# 1. num_machines / num_processes / machine_rank / main_process_ip /
+#    main_process_port 用 ${ENV_VAR} 占位符,由 wrapper 通过 envsubst 渲染。
+#    (单机 yaml hardcode 1/8/0,造成两台机器各起独立 8 卡 job。)
+#
+# 2. **num_processes 必须 = TOTAL_GPUS (不是 NPROC_PER_NODE!)**
+#    accelerate 把 num_processes 当成 TOTAL,nproc_per_node = num_processes /
+#    num_machines 算出来。所以:
+#      yaml:  num_processes: ${TOTAL_GPUS}  →  e.g. 32
+#      CLI:   --num_processes $TOTAL_GPUS   →  e.g. 32
+#    yaml 和 CLI 一致 → 不管 accelerate merge 谁赢都对。
+#    如果用 ${NPROC_PER_NODE} (=8),万一 yaml 赢 CLI 就只起 8/4=2 proc/node = 死。
+#
+# 3. 新增 deepspeed_multinode_launcher: standard
+#    告诉 DeepSpeed 用 standard launcher(不要 PDSH/SSH),走 torchrun 风格:
+#      accelerate launch.py:427-435 这个分支会:
+#        nproc_per_node = num_processes // num_machines  = 32/4 = 8
+#        nnodes = num_machines = 4
+#        node_rank = machine_rank
+#        master_addr / master_port = main_process_ip / main_process_port
+#      → 每节点起 8 个 proc,所有 32 proc 用 master:port 建立分布式组。
+#
+# 4. 跟 teacher_model/configs_acc/multinode_deepspeed.yaml 对齐 — 那个 yaml
+#    已经在 teacher_model 32 GPU SFT pretrain 跑通过。
+# ─────────────────────────────────────────────────────────────────────────────
+compute_environment: LOCAL_MACHINE
+debug: false
+deepspeed_config:
+  deepspeed_config_file: configs_zero/zero2_offload.yaml
+  zero3_init_flag: false
+  deepspeed_multinode_launcher: standard
+distributed_type: DEEPSPEED
+downcast_bf16: "no"
+num_processes: ${TOTAL_GPUS}
+num_machines: ${WORLD_SIZE}
+machine_rank: ${RANK}
+main_process_ip: ${MASTER_ADDR}
+main_process_port: ${MASTER_PORT}
+main_training_function: MAIN
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false

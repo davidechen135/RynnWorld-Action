@@ -1,0 +1,34 @@
+[
+  {
+    "video_latent_path": "data/video_latents/assemble_jenga_0_1_rgb.safetensors",
+    "text_embedding_path": "example/assemble_jenga_001/text_embedding.safetensors"
+  },
+  {
+    "video_latent_path": "data/video_latents/basic_fold_1_6_rgb.safetensors",
+    "text_embedding_path": "example/basic_fold_009/text_embedding.safetensors"
+  },
+  {
+    "video_latent_path": "data/video_latents/basic_pick_place_0_0_rgb.safetensors",
+    "text_embedding_path": "example/basic_pick_place_000/text_embedding.safetensors"
+  },
+  {
+    "video_latent_path": "data/video_latents/clean_surface_0_1_rgb.safetensors",
+    "text_embedding_path": "example/clean_surface_001/text_embedding.safetensors"
+  },
+  {
+    "video_latent_path": "data/video_latents/clip_unclip_papers_0_6_rgb.safetensors",
+    "text_embedding_path": "example/clip_unclip_papers_006/text_embedding.safetensors"
+  },
+  {
+    "video_latent_path": "data/video_latents/color_0_4_rgb.safetensors",
+    "text_embedding_path": "example/color_004/text_embedding.safetensors"
+  },
+  {
+    "video_latent_path": "data/video_latents/flip_pages_10_2_rgb.safetensors",
+    "text_embedding_path": "example/flip_pages_008/text_embedding.safetensors"
+  },
+  {
+    "video_latent_path": "data/video_latents/fold_unfold_paper_basic_0_8_rgb.safetensors",
+    "text_embedding_path": "example/fold_unfold_paper_basic_008/text_embedding.safetensors"
+  }
+]

@@ -1,0 +1,27 @@
+# RynnWorld-Teleop Configuration
+# This config file is used by streaming training scripts
+
+paths:
+  # Sample data for quick start
+  data: data/sample_data.json
+  
+  # Base model path (users need to download Wan2.2-TI2V-5B-Diffusers)
+  model: pretrained/Wan2.2-TI2V-5B-Diffusers
+  
+  # Teacher checkpoint (optional, for distillation)
+  # teacher_ckpt: /path/to/teacher/checkpoint
+  
+  # Null prompt embedding (optional)
+  # null_prompt: /path/to/null_prompt.safetensors
+
+run:
+  name: rynnworld_teleop_demo
+  output_base: outputs
+
+# Multi-node configuration (uncomment for multi-node training)
+# multinode:
+#   world_size: 2
+#   rank: 0
+#   master_addr: "10.0.0.1"
+#   master_port: 29500
+#   nproc_per_node: 8
