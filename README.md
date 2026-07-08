@@ -6,7 +6,7 @@
 
 
 <p align="center">
-       💫 <a href="https://alibaba-damo-academy.github.io/RynnWorld-Teleop.github.io/"><b>Project Page</b></a>&nbsp;&nbsp; | &nbsp;&nbsp; 🤗 <a href ="https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-Teleop"><b> Hugging Face </b></a> &nbsp;&nbsp; | &nbsp;&nbsp; 🤖 <a href = "https://www.modelscope.cn/models/DAMO_Academy/RynnWorld-Teleop"><b> ModelScope</b></a>  &nbsp;|&nbsp; 🚀 <a href="https://huggingface.co/spaces/Alibaba-DAMO-Academy/RynnWorld-Teleop"><b>Demo</b></a> &nbsp;&nbsp; | &nbsp;&nbsp; 📄 <a href="https://arxiv.org/abs/2602.14979v1">arXiv</a>&nbsp;&nbsp;
+       💫 <a href="https://alibaba-damo-academy.github.io/RynnWorld-Teleop.github.io/"><b>Project Page</b></a>&nbsp;&nbsp; | &nbsp;&nbsp; 🤗 <a href ="https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-Teleop"><b> Hugging Face </b></a> &nbsp;&nbsp; | &nbsp;&nbsp; 🤖 <a href = "https://www.modelscope.cn/models/DAMO_Academy/RynnWorld-Teleop"><b> ModelScope</b></a>  &nbsp;|&nbsp; 🚀 <a href="https://huggingface.co/spaces/Alibaba-DAMO-Academy/RynnWorld-Teleop"><b>Demo</b></a> &nbsp;&nbsp; | &nbsp;&nbsp; 📄 <a href="https://arxiv.org/abs/2607.06558">arXiv</a>&nbsp;&nbsp;
 
 </p>
 
@@ -26,11 +26,8 @@ We introduce **RynnWorld-Teleop**, a robot-centric generative world model that i
 ---
 
 ## 📰 News
-* **[2026.07.07]**  🔥🔥 Release our <a href="https://alibaba-damo-academy.github.io/RynnWorld-Teleop.github.io/assets/RynnWorld-Teleop_Report.pdf">Technical Report</a> !!
+* **[2026.07.07]**  🔥🔥 Release our <a href="https://arxiv.org/pdf/2607.06558">Technical Report</a> !!
 * **[2026.07.07]**  🔥🔥 Release our code and model checkpoints!!
-
-
-
 
 
 ---
@@ -394,7 +391,8 @@ If you find this project useful, please cite:
 ```bibtex
 @article{rynnworld_teleop,
   title  = {RynnWorld-Teleop: An Action-Conditioned World Model for Digital Teleoperation},
-  author = {DAMO Academy, Alibaba Group},
+  author = {Haoyu Zhao and Xingyue Zhao and Hangyu Li and Biao Gong and Kehan Li and Siteng Huang and Xin Li and Deli Zhao and Zhongyu Li},
+  journal= {arXiv preprint arXiv:2607.06558},
   year   = {2026},
 }
 ```
