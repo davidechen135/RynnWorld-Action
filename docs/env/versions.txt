@@ -1,0 +1,7 @@
+python 3.12.3
+torch 2.8.0+cu128
+cuda 12.8
+diffusers 0.39.0
+transformers 5.13.1
+gpu NVIDIA H20
+flash_attn 2.8.3 (prebuilt wheel: cu12torch2.8cxx11abiTRUE-cp312)

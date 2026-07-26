@@ -1,0 +1,71 @@
+{
+  "metric": "MUSIQ-KonIQ (pyiqa, VBench imaging_quality backend)",
+  "higher_is_better": true,
+  "sft_mean": 54.038,
+  "streaming_mean": 45.162,
+  "per_case": [
+    {
+      "mode": "SFT",
+      "case": "assemble_jenga_001",
+      "musiq": 54.585,
+      "frames_scored": 11,
+      "total_frames": 81
+    },
+    {
+      "mode": "SFT",
+      "case": "basic_fold_009",
+      "musiq": 52.022,
+      "frames_scored": 11,
+      "total_frames": 81
+    },
+    {
+      "mode": "SFT",
+      "case": "basic_pick_place_000",
+      "musiq": 46.648,
+      "frames_scored": 11,
+      "total_frames": 81
+    },
+    {
+      "mode": "SFT",
+      "case": "clean_surface_001",
+      "musiq": 50.706,
+      "frames_scored": 11,
+      "total_frames": 81
+    },
+    {
+      "mode": "SFT",
+      "case": "clip_unclip_papers_006",
+      "musiq": 55.051,
+      "frames_scored": 11,
+      "total_frames": 81
+    },
+    {
+      "mode": "SFT",
+      "case": "color_004",
+      "musiq": 60.416,
+      "frames_scored": 11,
+      "total_frames": 81
+    },
+    {
+      "mode": "SFT",
+      "case": "flip_pages_008",
+      "musiq": 51.809,
+      "frames_scored": 11,
+      "total_frames": 81
+    },
+    {
+      "mode": "SFT",
+      "case": "fold_unfold_paper_basic_008",
+      "musiq": 61.07,
+      "frames_scored": 11,
+      "total_frames": 81
+    },
+    {
+      "mode": "Streaming",
+      "case": "basic_pick_place_000",
+      "musiq": 45.162,
+      "frames_scored": 11,
+      "total_frames": 81
+    }
+  ]
+}
