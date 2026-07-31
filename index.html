@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>本周工作报告 — RynnWorld-Teleop 微调与自定义首帧推理</title>
+<style>
+:root{
+  --bg:#faf9f7; --surface:#ffffff; --line:#e5e1db;
+  --ink:#22201d; --ink2:#57534e; --ink3:#8a847d;
+  --c1:#3b6db3; --c2:#7b4fa8; --c3:#c2703d; --c4:#2e8b6f;
+  --good:#2e7d5b; --warn:#b8860b; --bad:#b3453b;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:0 24px 80px}
+header{padding:56px 0 32px;border-bottom:1px solid var(--line);margin-bottom:8px}
+h1{font-size:31px;line-height:1.3;margin:0 0 12px;letter-spacing:-.4px}
+.sub{color:var(--ink2);font-size:16px;margin:0}
+.meta{color:var(--ink3);font-size:13.5px;margin-top:16px}
+h2{font-size:23px;margin:52px 0 6px;letter-spacing:-.2px;padding-top:8px}
+h2 .n{color:var(--ink3);font-weight:400;margin-right:10px;font-variant-numeric:tabular-nums}
+h3{font-size:17.5px;margin:32px 0 8px}
+p{margin:12px 0}
+.lead{color:var(--ink2);margin:6px 0 20px}
+code{background:#f2efea;padding:2px 6px;border-radius:4px;
+  font:13.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#2b2926;color:#e8e4dd;padding:16px 18px;border-radius:8px;
+  overflow-x:auto;font:13px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace}
+pre code{background:none;padding:0;color:inherit}
+a{color:var(--c1)}
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14.5px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}
+th{font-weight:600;color:var(--ink2);font-size:13px;text-transform:uppercase;letter-spacing:.4px}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tbody tr:hover{background:#f5f2ee}
+figure{margin:22px 0}
+figure img{width:100%;border:1px solid var(--line);border-radius:8px;display:block;background:#fff}
+figcaption{color:var(--ink3);font-size:13.5px;margin-top:9px;line-height:1.6}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 22px;margin:20px 0}
+.verdict{border-left:3px solid var(--bad)}
+.verdict.ok{border-left-color:var(--good)}
+.verdict h3{margin-top:0}
+.tag{display:inline-block;font-size:12px;padding:2px 9px;border-radius:20px;
+  background:#f2efea;color:var(--ink2);margin-right:6px;vertical-align:middle}
+.tag.bad{background:#fbeae8;color:var(--bad)}
+.tag.good{background:#e8f3ed;color:var(--good)}
+.tag.warn{background:#fdf4e0;color:var(--warn)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:720px){.grid2{grid-template-columns:1fr}}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 18px;font-size:14.5px;margin:14px 0}
+.kv dt{color:var(--ink3)}
+.kv dd{margin:0;font-variant-numeric:tabular-nums}
+ul,ol{padding-left:22px}
+li{margin:7px 0}
+.callout{background:#fdf9ee;border:1px solid #ecdfc0;border-radius:8px;padding:14px 18px;margin:18px 0;font-size:15px}
+.callout strong{color:#8a6d1f}
+hr{border:0;border-top:1px solid var(--line);margin:44px 0}
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin:28px 0}
+.toc ol{margin:6px 0 0;padding-left:20px}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+.arch{font:13px/1.7 ui-monospace,Menlo,monospace;background:#2b2926;color:#e8e4dd;
+  padding:18px;border-radius:8px;overflow-x:auto;white-space:pre}
+.hl{color:#f0c674}
+.dim{color:#a09a92}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>RynnWorld-Teleop 本周工作报告</h1>
+  <p class="sub">两条线:① 真机数据 LoRA 微调(357 → 362,四轮);② 自拍首帧 + 官方骨架控制推理</p>
+  <p class="meta">分支 <code>three-layer-transform</code> · 2× NVIDIA H20 96G · 基座 Wan2.2-TI2V-5B-Diffusers · 2026-07-31</p>
+</header>
+
+<div class="toc">
+  <strong>目录</strong>
+  <ol>
+    <li><a href="#summary">结论摘要</a></li>
+    <li><a href="#arch">微调方法:网络结构与算法</a></li>
+    <li><a href="#smoke">第一步:训练 smoke 跑通</a></li>
+    <li><a href="#v357">第二步:357 单集微调(v1 → v2 改超参)</a></li>
+    <li><a href="#v362">第三步:362 多集微调(下更多数据)</a></li>
+    <li><a href="#rootcause">第四步:定位失败原因 + 一个真实缺陷</a></li>
+    <li><a href="#firstframe">第二条线:自拍首帧推理</a></li>
+    <li><a href="#next">下一步</a></li>
+  </ol>
+</div>
+
+<h2 id="summary"><span class="n">01</span>结论摘要</h2>
+
+<div class="card verdict">
+  <h3><span class="tag bad">未达标</span>微调线:四轮都没有在未见 episode 上得到可用的世界模型</h3>
+  <p>357 单集(v1/v2)+ 362 多集(v1/v3),数据量拉了 10 倍、超参改了两轮、修了一个真实的
+  harness 缺陷,<strong>held-out rollout 依然从第 2 帧开始塌缩</strong>:手臂溶解,画面糊成棕色。</p>
+  <p>关键是:<strong>zero-shot 官方 SFT 权重在同样的 AgiBot 数据上也塌</strong>(detail ratio 0.651
+  vs 微调后 0.663)。所以瓶颈在我准备的数据/控制信号,不在 LoRA、不在数据量。
+  "更多数据有没有帮助"这个问题,这轮实验<em>无法回答</em>。</p>
+</div>
+
+<div class="card verdict ok">
+  <h3><span class="tag good">达标</span>自拍首帧线:两个动作都跑通,无塌缩</h3>
+  <p>用官方 SFT 权重 + 官方骨架控制 + 官方文本嵌入,<strong>只把首帧换成自己拍的照片</strong>,
+  pick_place 和 fold_unfold_paper 两个动作都产出了 81 帧连贯 rollout,detail ratio 1.047 / 1.031
+  (>1 = 无塌缩),动作跟随骨架控制。</p>
+</div>
+
+<p>这两条线放在一起看有信息量:<strong>同一个 SFT 权重,喂官方控制不塌、喂我渲的 AgiBot 骨架就塌</strong>。
+这是本周最有价值的一个对照,直接指出问题出在控制信号的制备上。</p>
+
+<h2 id="arch"><span class="n">02</span>微调方法:网络结构与算法</h2>
+<p class="lead">先说清楚"微调"具体动了模型的哪一部分,这是理解后面所有失败的前提。</p>
+
+<h3>整体结构</h3>
+<p>基座是 Wan2.2-TI2V-5B(Diffusers 版),一个 latent 空间的扩散 Transformer(DiT)。三个部件:
+<strong>VAE</strong>(z_dim=48,把 480×832×81 帧视频压成 <code>[48,21,30,52]</code> latent)、
+<strong>T5 文本编码器</strong>(输出 <code>[226,4096]</code>)、
+<strong>DiT 主干</strong>(30 层 block,inner_dim 3072 = 24 头 × 128)。</p>
+<p>微调<strong>只动 DiT 主干</strong>,VAE 和文本编码器全程冻结。</p>
+
+<div class="arch">输入 latent [B,48,21,30,52]
+  │
+  ├─ patch_embedding      Conv3d(48→3072, k=(1,2,2))   <span class="dim">冻结</span>
+  │        +
+  └─ <span class="hl">control_patch_embedding</span> Conv3d(48→3072)          <span class="hl">← 全量训练(非 LoRA)</span>
+           × <span class="hl">control_scale</span>  (标量 nn.Parameter)      <span class="hl">← 可学门控</span>
+  │
+  ▼  token 序列 [B, 21×15×26, 3072]
+┌─────────────────────────────────────────────┐
+│  30 × TransformerBlock                      │
+│    ├ attn1 (self-attn)                      │
+│    │   to_q / to_k / to_v / to_out.0   <span class="hl">← LoRA r=32</span> │
+│    ├ attn2 (cross-attn, 文本条件)      <span class="dim">冻结</span>    │
+│    └ ffn  net.0.proj / net.2           <span class="hl">← LoRA r=32</span> │
+└─────────────────────────────────────────────┘
+  │
+  ▼  norm_out → proj_out → unpatchify → [B,48,21,30,52]</div>
+
+<h3>两个改动点</h3>
+<table>
+<thead><tr><th>位置</th><th>做法</th><th class="num">参数量</th></tr></thead>
+<tbody>
+<tr><td>30 层 block 内的 self-attn + FFN</td><td>LoRA rank 32 / alpha 32,6 个挂载点</td><td class="num">30×6×2 = 360 张量</td></tr>
+<tr><td>DiT 最前端控制注入旁路</td><td><code>control_patch_embedding</code> + <code>control_scale</code> 全量训练</td><td class="num">1 个 Conv3d + 1 标量</td></tr>
+</tbody>
+</table>
+
+<p>注意只挂了 <code>attn1</code>(self-attention,管时空 token 互相看 → 影响运动和一致性),
+<strong>没挂 <code>attn2</code></strong>(cross-attention,文本条件那条路)——任务文本固定,没必要调。</p>
+
+<h3>控制注入的数学形式(<code>control_type=add</code>)</h3>
+<pre><code>hidden = patch_embedding(video_latent)                          # 冻结主通路
+       + control_scale * control_patch_embedding(skeleton)      # 控制注入</code></pre>
+<p>骨架控制信号经自己的 Conv3d 编码、乘一个可学标量门控,<strong>加到</strong> patch embedding 输出上,
+然后一起流过 30 层 block。</p>
+
+<div class="callout">
+<strong>这个结构决定了失败模式。</strong>控制<strong>只在第 0 层之前注入一次</strong>,之后 30 层里没有任何
+再次校正的机制。所以控制信号一旦偏弱或位置不对,rollout 走到后面没有东西能把它拉回来——
+这正是后面塌缩的结构性原因。
+</div>
+
+<h3>训练目标</h3>
+<p>标准 flow-matching / 扩散去噪:采样时间步 t、给 <code>video_latents</code> 加噪、让模型预测速度场,
+MSE loss。没有改 scheduler、没有改损失函数、没有改 VAE。这也解释了为什么后面
+<strong>单步去噪 loss 收敛得很正常,但 rollout 塌</strong>——训练目标(单步)和评测方式(81 帧自回归 rollout)
+之间有 gap。</p>
+
+<h3>数据格式</h3>
+<p>每个 clip 一个 safetensors,官方三元组:</p>
+<div class="kv">
+<dt><code>video_latents</code></dt><dd>[48,21,30,52] — 去噪目标(GT 视频)</dd>
+<dt><code>control_video_latents</code></dt><dd>[48,21,30,52] — 控制信号(骨架视频经 VAE 编码)</dd>
+<dt><code>img_latent</code></dt><dd>[48,1,30,52] — 首帧,推理时硬锚 rollout 第 0 帧</dd>
+<dt><code>text_embedding</code></dt><dd>[226,4096] — 任务文本(每任务共享一份)</dd>
+</div>
+
+<hr>
+
+<h2 id="smoke"><span class="n">03</span>第一步:训练 smoke 跑通</h2>
+<p class="lead">在碰真机数据之前,先确认训练通路本身是通的。</p>
+
+<p>用官方 3 个样例 clip(<code>data/sample_data.json</code>)跑 <code>scripts/smoke_sft_2gpu.sh</code>,
+2×H20 全量 SFT 模式。结论:通路无误,loss 正常下降,显存峰值可控。产物 103G 在
+<code>training/smoke_sft_2gpu/</code>,记录在 <a href="../../docs/training_smoke.md">docs/training_smoke.md</a>。</p>
+
+<p>这一步确立了后面所有实验的基线:<strong>官方数据 + 官方代码 = 能训</strong>。所以之后出问题,
+排查方向应该指向"我准备的数据"而不是"训练代码"。事后看,这个判断方向是对的。</p>
+
+<hr>
+
+<h2 id="v357"><span class="n">04</span>第二步:357 单集微调(v1 → v2 改超参)</h2>
+<p class="lead">目标:跨过"没做过微调"这条线,用真机 AgiBot ego 数据适配世界模型。</p>
+
+<p>路径 A = 零新增下载,用手头已有的 task-357("Washing dishes with a dishwasher")单个长
+episode(648751),切成 40 个 81 帧 clip。</p>
+
+<h3>v1:自制控制信号 — 失败</h3>
+<p>第一版我<strong>手工合成</strong> <code>control_video_latents</code>:匹配了真实控制的均值/方差,
+但只有真实控制<strong>25% 的时间变化量</strong>(0.0398 vs 0.1587)。</p>
+<p>结果:held-out motion 达 GT 的 <strong>231%</strong> 且持续发散(2.17 → 3.86),画面乱动。
+另外发现一个缺陷:<code>--ema_start_step 40</code> 大于总步数 24,导致 EMA 的 <code>update()</code>
+<strong>一次都没跑</strong>,<code>ema_final</code> 存的是训练前的影子权重(LoRA B 矩阵 0/180 非零)。</p>
+
+<h3>v2:改渲染骨架 + 修超参</h3>
+<p>两处改动:</p>
+<ol>
+<li><strong>控制信号换成真渲染骨架</strong>:把真实 <code>action/end/position</code> + 姿态 + 夹爪渲染成
+官方风格的 21 关键点骨架视频,再用官方 VAE 编码。时间变化量 0.0398 → <strong>0.0745</strong>(真实的 47%)。</li>
+<li><strong>超参修正</strong>:<code>ema_start_step</code> 40 → 6(小于总步数,EMA 真的会跑),
+<code>train_epochs</code> 6,<code>lr_warmup_steps</code> 3,<code>checkpointing_steps</code> 6。</li>
+</ol>
+
+<div class="callout">
+<strong>AgiBot 没有相机内参。</strong>骨架投影用的相机是从 episode 里<strong>拟合</strong>出来的
+(背景减除 → 每半边质心 → x,y,z 的二次多项式,R²≈0.72/0.77,误差 7–8px)。
+DLT 透视在单条轨迹上退化(R² → −30)。这是个代理,不是标定——很可能是后续的瓶颈之一。
+</div>
+
+<h3>357 两轮的 held-out 结果</h3>
+<table>
+<thead><tr><th>模型</th><th class="num">motion energy</th><th class="num">% of GT</th><th>判读</th></tr></thead>
+<tbody>
+<tr><td>真实 GT</td><td class="num">1.21</td><td class="num">100%</td><td>参考基准</td></tr>
+<tr><td>zero-shot(官方 SFT)</td><td class="num">0.76</td><td class="num">63%</td><td>动作偏少</td></tr>
+<tr><td>v1 ckpt-24(自制控制)</td><td class="num">2.79</td><td class="num">231%</td><td><span class="tag bad">发散</span>乱动</td></tr>
+<tr><td>v2 ckpt-18(渲染骨架)</td><td class="num">0.43</td><td class="num">35%</td><td><span class="tag warn">欠动作</span>不塌但太静</td></tr>
+</tbody>
+</table>
+
+<p>这一轮学到两件事:</p>
+<ul>
+<li>v1 的"乱动"<strong>大部分是坏控制输入造成的,不是权重</strong>——光换控制信号,zero-shot 就从 208% 降到 63%。</li>
+<li>v2 消除了发散,但<strong>反向欠冲</strong>,只有 GT 的 35%。修掉了失败模式,没达到 GT 幅度。</li>
+</ul>
+<p>另外 EMA 虽然在 v2 里真的跑了(180/180 非零),但 decay 0.99 × 仅 12 次更新只到训练幅度的 ~11%
+(B 矩阵 absmax 0.000083 vs 0.000755)。<strong>所以评测一律用 checkpoint-N,不用 ema_final。</strong></p>
+
+<hr>
+
+<h2 id="v362"><span class="n">05</span>第三步:362 多集微调(下更多数据)</h2>
+<p class="lead">357 的核心限制是<strong>单 episode、单场景</strong>。这一步把数据量拉了 10 倍。</p>
+
+<h3>下载与磁盘</h3>
+<p>决定只做 task 362("Folding shorts"),下载两个 tar 共 ~97GB:</p>
+<ul>
+<li>observations <code>649552-654138.tar</code>(48.6G,8 路相机流,只留 <code>head_color.mp4</code>)</li>
+<li>proprio <code>648533-923022.tar</code>(48G,<strong>混了所有任务</strong>,靠路径里的 episode id 筛出 362)</li>
+</ul>
+<p>磁盘只剩 ~372G(96% 满),所以策略是:下载 → 流式抽取只要的文件 → <strong>校验齐全后删掉两个 tar</strong>
+(释放 97G)。抽完 <code>/root/autodl-tmp/agibot_362_data</code> 只有 728M。</p>
+<p><code>head_color.mp4</code> 是 <strong>AV1 编码</strong>,decord/OpenCV 都读不了,走 ffmpeg libdav1d rawvideo pipe。</p>
+
+<h3>数据规模对比</h3>
+<table>
+<thead><tr><th>轮次</th><th>任务</th><th class="num">episode</th><th class="num">clip</th><th>held-out 方式</th></tr></thead>
+<tbody>
+<tr><td>357 v1/v2</td><td>Washing dishes</td><td class="num">1</td><td class="num">40</td><td>同 episode 尾部</td></tr>
+<tr><td><strong>362 v1/v3</strong></td><td>Folding shorts</td><td class="num"><strong>20</strong></td><td class="num"><strong>395</strong></td><td><strong>3 个完整未见 episode</strong></td></tr>
+</tbody>
+</table>
+<p>held-out 更严格了:不是同一集的尾巴,而是<strong>三个完全没见过的 episode</strong>(650872 / 650213 / 650190,共 56 clip),
+和训练集零帧重叠。</p>
+
+<div class="callout">
+<strong>一个必须说明的局限:场景多样性还是 1。</strong>范围内 220 个 episode 全都是"床上折短裤",
+所以 362 相比 357 的增益是 <strong>episode/轨迹数量 + 帧数</strong>,<strong>不是场景多样性</strong>。
+这限制了这轮实验能回答的问题。
+</div>
+
+<h3>训练曲线(四轮)</h3>
+<figure>
+  <img src="assets/training_curves.png" alt="四轮 LoRA 微调的 loss、grad_norm、learning rate 曲线对比,横轴为训练步数">
+  <figcaption>四轮微调的训练曲线。loss 图中浅色为原始值、深色为 9 点滑动平均。
+  <strong>所有四轮的单步去噪 loss 都正常收敛</strong>(0.124 → 最低 0.056),grad_norm 也健康下降。
+  这正是本次实验最容易误导人的地方:训练指标全绿,rollout 全塌。</figcaption>
+</figure>
+
+<table>
+<thead><tr><th>run</th><th class="num">步数</th><th class="num">loss 初始</th><th class="num">loss 最低</th><th class="num">loss 末值</th><th class="num">grad_norm 末值</th></tr></thead>
+<tbody>
+<tr><td>357 v1</td><td class="num">24</td><td class="num">0.128</td><td class="num">0.082</td><td class="num">0.099</td><td class="num">0.019</td></tr>
+<tr><td>357 v2 skeleton</td><td class="num">18</td><td class="num">0.128</td><td class="num">0.084</td><td class="num">0.148</td><td class="num">0.098</td></tr>
+<tr><td>362 v1 zero-init</td><td class="num">100</td><td class="num">0.124</td><td class="num"><strong>0.056</strong></td><td class="num">0.109</td><td class="num">0.075</td></tr>
+<tr><td>362 v3 warm-start</td><td class="num">75</td><td class="num">0.124</td><td class="num">0.057</td><td class="num">0.130</td><td class="num">0.094</td></tr>
+</tbody>
+</table>
+
+<h3>362 held-out 结果(3 个未见 episode 平均)</h3>
+<table>
+<thead><tr><th>模型</th><th class="num">motion</th><th class="num">% of GT</th><th class="num">detail ratio</th><th>判读</th></tr></thead>
+<tbody>
+<tr><td>真实 GT</td><td class="num">0.00822</td><td class="num">100%</td><td class="num"><strong>1.105</strong></td><td>结构保持</td></tr>
+<tr><td>zero-shot(官方 SFT)</td><td class="num">0.00871</td><td class="num">106%</td><td class="num">0.651</td><td><span class="tag bad">塌缩</span></td></tr>
+<tr><td>362 v1 ckpt-100</td><td class="num">0.01140</td><td class="num">139%</td><td class="num">0.663</td><td><span class="tag bad">塌缩</span></td></tr>
+<tr><td>362 v3 ckpt-75(warm-start)</td><td class="num">0.01322</td><td class="num">161%</td><td class="num">0.635</td><td><span class="tag bad">塌缩</span></td></tr>
+</tbody>
+</table>
+
+<figure>
+  <img src="assets/collapse_650190_clip_000729.png" alt="held-out episode 650190 微调后 rollout 的 5 帧,从第 0 帧清晰逐步退化为棕色糊状">
+  <figcaption>塌缩实况(held-out episode 650190,362 微调后 ckpt-100,取 f0/f10/f30/f50/f79)。
+  第 0 帧正确(它是从条件 latent 硬锚的),然后从第 ~2 帧开始融化:手臂溶解,最后整幅压成棕色。
+  <strong>3 个 held-out episode、zero-shot 和微调后,全都是这个样子。</strong></figcaption>
+</figure>
+
+<div class="callout">
+<strong>不能只看 motion energy。</strong>单看上表 motion 从 106% 涨到 139%/161%,像是"微调让动作更接近 GT"。
+这是<strong>假阳性</strong>——融化过程本身就产生和 GT 同量级的帧间变化。
+真正有判别力的是 <strong>detail ratio</strong>(后 1/3 与前 1/3 的空间细节比):
+GT 是 1.105(结构保持),所有生成的都是 0.63–0.66(结构丢失)。
+</div>
+
+<hr>
+
+<h2 id="rootcause"><span class="n">06</span>第四步:定位失败原因 + 一个真实缺陷</h2>
+
+<h3>决定性对照:zero-shot 也塌</h3>
+<p>这是整周最重要的一个观察。<strong>同一个模型、同一份代码</strong>:</p>
+<table>
+<thead><tr><th>输入数据</th><th class="num">detail ratio</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>官方样例 clip(basic_fold)</td><td class="num">0.917</td><td><span class="tag good">不塌</span></td></tr>
+<tr><td>我准备的 AgiBot clip</td><td class="num">0.605–0.66</td><td><span class="tag bad">塌</span></td></tr>
+</tbody>
+</table>
+<p>而且 <strong>zero-shot 官方 SFT 权重在 AgiBot 数据上塌得和微调后一样</strong>(0.651 vs 0.663)。
+LoRA 没让它变坏,但也救不了它。<strong>瓶颈在 LoRA 之前。</strong></p>
+
+<h3>控制强度的域差异</h3>
+<table>
+<thead><tr><th>信号</th><th class="num">时间变化量</th><th class="num">相对官方</th></tr></thead>
+<tbody>
+<tr><td>官方控制 latent</td><td class="num">0.132–0.152</td><td class="num">100%</td></tr>
+<tr><td>我渲的 AgiBot 骨架</td><td class="num">0.074–0.092</td><td class="num"><strong>~55%</strong></td></tr>
+<tr><td colspan="3" style="border:0;padding-top:14px;color:var(--ink3);font-size:13.5px">底层视频本身:</td></tr>
+<tr><td>官方 head camera 视频</td><td class="num">0.38–0.41</td><td class="num">100%</td></tr>
+<tr><td>AgiBot head camera 视频</td><td class="num">0.28</td><td class="num">~70%</td></tr>
+</tbody>
+</table>
+<p>SFT 模型是在"控制信号相对视频足够强"的条件下训出来的。给它一个偏弱的控制,它就锚不住,开始漂移。</p>
+
+<h3>发现并修复了一个真实缺陷(但它不是主因)</h3>
+<p><code>control_type=add</code> 路径下,harness <strong>每次运行都把 <code>control_patch_embedding</code> 零初始化、
+并把 <code>control_scale</code> 硬编码成 0.1</strong>,丢掉了 SFT checkpoint 里已训练好的控制权重
+(100 步只能恢复到 SFT 幅度的 1/31)。</p>
+<p>我加了 <code>--control_init_from</code> 从 SFT 热启动控制路径,验证幅度恢复(0.0369 vs SFT 0.0364)。
+<strong>然后塌缩没有消失</strong>(detail ratio 0.617 → 0.605)。这是个值得保留的正确性修复,但不是瓶颈。</p>
+
+<div class="card verdict">
+<h3>微调线的诚实结论</h3>
+<p>"更多数据有没有帮助"——<strong>这轮实验回答不了</strong>。因为所有分支都因为一个上游原因塌缩:
+数据规模不是约束,harness 缺陷也不是。</p>
+<p>已排除的假设:① LoRA 配置 ② 数据量 ③ EMA 缺陷 ④ 控制权重零初始化 ⑤ 训练超参
+⑥ 合成骨架 vs 真实视频的分布差异(官方控制本身也是白底合成骨架图,见下节)。</p>
+<p>仍然可疑的:<strong>骨架的几何正确性</strong>——AgiBot 无内参、相机是拟合的(R² 仅 0.72/0.77),
+骨架可能投影到了错误位置;以及关键点语义是否和官方 21 点定义对齐。这是下一步要验证的第一件事。</p>
+</div>
+
+<hr>
+
+<h2 id="firstframe"><span class="n">07</span>第二条线:自拍首帧推理</h2>
+<p class="lead">需求:只把首帧换成自己拍的照片,其余全部沿用官方 demo。</p>
+
+<h3>方法</h3>
+<p>命令和纯复现阶段的 <code>scripts/repro_sft_all.sh</code> <strong>逐参数一致</strong>,唯一区别是
+<code>--image</code> 指向自己的照片:</p>
+<pre><code>python inference_user.py \
+  --image <span class="hl">data/custom_first_frames/pick_place.jpg</span>   <span class="dim"># ← 只有这里换了</span>
+  --control_video  example/basic_pick_place_000/control_video.mp4        <span class="dim"># 官方</span>
+  --text_embedding example/basic_pick_place_000/text_embedding.safetensors <span class="dim"># 官方</span>
+  --checkpoint     pretrained/RynnWorld-Teleop                          <span class="dim"># 官方 SFT</span>
+  --mode sft --control_type add --seeds 42                              <span class="dim"># 官方</span></code></pre>
+<p>照片任意分辨率/格式,脚本自动 resize 到 480×832 再经 VAE 编码成 <code>img_latent</code>,
+推理时硬锚 rollout 第 0 帧。</p>
+
+<div class="callout">
+<strong>过程中修正了一个自己的错误判断。</strong>我一开始认为"官方控制只有 latent、没有 mp4",
+于是另写脚本在 latent 层拼接。实际上 <code>example/</code> 目录下每个 demo 都自带
+<code>control_video.mp4</code> 和 <code>text_embedding.safetensors</code>——我之前只搜了 <code>data/</code>。
+走错通路的后果很明显:同一个 pick_place 控制,motion 从 0.366 变成 2.215(<strong>6 倍</strong>),
+因为官方 <code>inference_user.py</code> 对 mp4 控制有自己的预处理。改回官方通路后动作幅度才正常。
+</div>
+
+<h3>结果:pick_place</h3>
+<figure>
+  <img src="assets/pickplace_rollout_vs_skeleton.png" alt="上排为生成的 rollout 5 帧,下排为对应的输入骨架控制,手部骨架从右向左移动">
+  <figcaption><strong>上排 = 生成的 rollout,下排 = 输入的骨架控制</strong>(f0/f20/f40/f60/f80)。
+  手从右侧伸向左侧,f60 抓起一个青色物体。自己的场景(可乐罐、纸苹果、鼠标、蓝布)全程稳住,
+  没有漂移和变形。控制信号是双手骨架且有明显位移,rollout 跟上了。</figcaption>
+</figure>
+
+<h3>结果:fold_unfold_paper</h3>
+<figure>
+  <img src="assets/foldpaper_rollout_vs_skeleton.png" alt="上排为生成的折纸 rollout 5 帧,下排为对应的双手骨架控制">
+  <figcaption>双手捏着纸巾,前 60 帧非常稳,纸巾有真实的折叠形变;f80 变成掀起纸巾的动作,
+  和骨架控制里右手上抬对得上。清晰度掉到 48%,是两个里退化较重的。</figcaption>
+</figure>
+
+<h3>量化</h3>
+<table>
+<thead><tr><th>指标</th><th class="num">pick_place</th><th class="num">fold_unfold_paper</th></tr></thead>
+<tbody>
+<tr><td>骨架控制 motion</td><td class="num">2.215</td><td class="num">0.734</td></tr>
+<tr><td><strong>rollout motion(自拍首帧)</strong></td><td class="num"><strong>3.464</strong></td><td class="num"><strong>1.181</strong></td></tr>
+<tr><td>rollout motion(官方首帧,对照)</td><td class="num">2.383</td><td class="num">0.762</td></tr>
+<tr><td>清晰度 f0 → 末尾</td><td class="num">296 → 216(73%)</td><td class="num">94 → 45(48%)</td></tr>
+<tr><td><strong>detail ratio</strong></td><td class="num"><strong>1.047</strong> <span class="tag good">无塌缩</span></td><td class="num"><strong>1.031</strong> <span class="tag good">无塌缩</span></td></tr>
+</tbody>
+</table>
+
+<p>一个副产品发现:<strong>自拍首帧的清晰度是官方 demo 首帧的 16 倍</strong>(296 vs 18)。
+官方 demo 首帧本身就很模糊,自拍照片质量高得多——这也是自拍版本 rollout motion 反而高于官方版本的原因之一。</p>
+
+<hr>
+
+<h2 id="next"><span class="n">08</span>下一步</h2>
+<p class="lead">微调线要往前走,第一件事不是加数据,而是验证骨架的几何正确性。</p>
+<ol>
+<li><strong>把官方骨架和我渲的骨架并排比</strong>——确认关键点语义、连接拓扑、投影位置是否对齐。
+这是目前唯一没被排除的可疑点,而且成本最低。</li>
+<li><strong>用官方骨架 + AgiBot 首帧做交叉测试</strong>——如果不塌,就锁定问题在我的骨架渲染;
+如果塌,问题在 AgiBot 视频域本身。这个对照能一刀切开。</li>
+<li><strong>考虑结构性改动</strong>:控制目前只在 DiT 最前端注入一次。改成<strong>每隔几层重复注入</strong>
+(类似 ControlNet 的多尺度注入),让深层还能被控制信号校正。这比调数据大一档,需要先做小规模验证。</li>
+<li>自拍首帧线已达标,可以扩展到更多官方 demo(<code>blowdry_hair</code> dt 0.2099 运动最强,
+<code>clean_surface</code> 0.1556 次之)。</li>
+</ol>
+
+<hr>
+<p style="color:var(--ink3);font-size:13.5px">
+详细技术文档:<a href="../../docs/agibot_finetune.md">docs/agibot_finetune.md</a>(357 v1/v2)、
+<a href="../../docs/agibot_362_finetune.md">docs/agibot_362_finetune.md</a>(362 v1/v3)。
+产物:<code>outputs/custom_official/</code>(自拍首帧)、<code>outputs/agibot_362_sweep/</code>(362 held-out)、
+<code>outputs/training_curves.json</code>(曲线原始数据)。
+</p>
+
+
+</div>
+</body>
+</html>
