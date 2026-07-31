@@ -57,6 +57,18 @@ li{margin:7px 0}
 .callout{background:#fdf9ee;border:1px solid #ecdfc0;border-radius:8px;padding:14px 18px;margin:18px 0;font-size:15px}
 .callout strong{color:#8a6d1f}
 hr{border:0;border-top:1px solid var(--line);margin:44px 0}
+video{width:100%;border:1px solid var(--line);border-radius:8px;display:block;background:#111}
+.vgrid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:22px 0}
+@media(max-width:760px){.vgrid{grid-template-columns:1fr}}
+.vcard{margin:0}
+.vcard .cap{color:var(--ink3);font-size:13px;margin-top:8px;line-height:1.6}
+.vcard .ttl{font-size:14.5px;font-weight:600;margin:0 0 8px;color:var(--ink)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:22px 0}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:14px 16px}
+.stat .v{font-size:25px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.2}
+.stat .l{color:var(--ink3);font-size:12.5px;margin-top:5px;line-height:1.45}
+.stat.good .v{color:var(--good)} .stat.bad .v{color:var(--bad)} .stat.warn .v{color:var(--warn)}
+.vidnote{background:#f2efea;border-radius:7px;padding:9px 13px;font-size:13px;color:var(--ink2);margin:12px 0 0}
 .toc{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin:28px 0}
 .toc ol{margin:6px 0 0;padding-left:20px}
 .toc a{text-decoration:none}
@@ -108,8 +120,25 @@ hr{border:0;border-top:1px solid var(--line);margin:44px 0}
   (>1 = 无塌缩),动作跟随骨架控制。</p>
 </div>
 
-<p>这两条线放在一起看有信息量:<strong>同一个 SFT 权重,喂官方控制不塌、喂我渲的 AgiBot 骨架就塌</strong>。
-这是本周最有价值的一个对照,直接指出问题出在控制信号的制备上。</p>
+<p>这两条线放在一起看有信息量:<strong>同一个 SFT 权重,喂官方数据不塌、喂我准备的 AgiBot 数据就塌</strong>。
+这是本周最有价值的一个对照,直接指出问题出在数据的制备上。</p>
+
+<div class="stats">
+  <div class="stat bad"><div class="v">4 / 4</div><div class="l">微调轮次全部在 held-out 上塌缩</div></div>
+  <div class="stat bad"><div class="v">&lt;10 帧</div><div class="l">塌缩发生的帧数(共 81 帧)</div></div>
+  <div class="stat bad"><div class="v">97%</div><div class="l">塌缩后损失的空间细节</div></div>
+  <div class="stat good"><div class="v">2 / 2</div><div class="l">自拍首帧推理成功,无塌缩</div></div>
+  <div class="stat"><div class="v">395</div><div class="l">362 训练 clip 数(357 的 10 倍)</div></div>
+  <div class="stat"><div class="v">97 GB</div><div class="l">下载后抽取并删除的原始数据</div></div>
+</div>
+
+<h3>最决定性的一个对照(先看这个)</h3>
+<figure>
+  <video controls muted loop playsinline preload="metadata" src="assets/video/decisive_control.mp4"></video>
+  <figcaption><strong>左:官方数据(控制强度 dt=0.064)→ 全程正常。右:我准备的 AgiBot 数据(dt=0.074,反而更强)→ 几帧内塌成棕色。</strong>
+  两边是<em>同一个官方 SFT 权重、同一份推理代码</em>,唯一区别是输入数据。这证明问题既不在模型、也不在代码;
+  而且<strong>不能简单归因于"控制信号太弱"</strong>——我的控制强度其实比左边这个还高(详见第 6 节)。</figcaption>
+</figure>
 
 <h2 id="arch"><span class="n">02</span>微调方法:网络结构与算法</h2>
 <p class="lead">先说清楚"微调"具体动了模型的哪一部分,这是理解后面所有失败的前提。</p>
@@ -239,6 +268,14 @@ DLT 透视在单条轨迹上退化(R² → −30)。这是个代理,不是标定
 <p>另外 EMA 虽然在 v2 里真的跑了(180/180 非零),但 decay 0.99 × 仅 12 次更新只到训练幅度的 ~11%
 (B 矩阵 absmax 0.000083 vs 0.000755)。<strong>所以评测一律用 checkpoint-N,不用 ema_final。</strong></p>
 
+<figure>
+  <video controls muted loop playsinline preload="metadata" src="assets/video/heldout_357_v2.mp4"></video>
+  <figcaption>357 v2 的 held-out rollout(左 GT / 中 zero-shot / 右 v2 ckpt-18)。
+  v2 消除了 v1 的发散和退化(画面干净、collapse ratio 1.016),但动作明显比 GT 少——
+  这就是"欠冲到 35%"的实况。注意 357 这批数据上 collapse ratio 完全没有判别力
+  (含 GT 在内全部落在 0.986–1.016),这也是后来在 362 上换用更敏感指标的原因。</figcaption>
+</figure>
+
 <hr>
 
 <h2 id="v362"><span class="n">05</span>第三步:362 多集微调(下更多数据)</h2>
@@ -307,6 +344,48 @@ DLT 透视在单条轨迹上退化(R² → −30)。这是个代理,不是标定
   <strong>3 个 held-out episode、zero-shot 和微调后,全都是这个样子。</strong></figcaption>
 </figure>
 
+<h3>三个 held-out episode 的完整视频</h3>
+<p class="lead">每段左 = 真实 GT,中 = zero-shot 官方权重,右 = 362 微调后。三段都是同一个结论。</p>
+<div class="vgrid">
+  <figure class="vcard">
+    <p class="ttl">episode 650190</p>
+    <video controls muted loop playsinline preload="metadata" src="assets/video/collapse_650190_clip_000729.mp4"></video>
+    <p class="cap">GT 全程稳定;zero-shot 与微调后都在几帧内融化。</p>
+  </figure>
+  <figure class="vcard">
+    <p class="ttl">episode 650213</p>
+    <video controls muted loop playsinline preload="metadata" src="assets/video/collapse_650213_clip_000729.mp4"></video>
+    <p class="cap">同上。注意微调后并没有比 zero-shot 更好。</p>
+  </figure>
+</div>
+<figure class="vcard">
+  <p class="ttl">episode 650872</p>
+  <video controls muted loop playsinline preload="metadata" src="assets/video/collapse_650872_clip_000810.mp4"></video>
+  <p class="cap">这一集 GT 本身动作很小(motion 0.0044),所以生成侧的 motion 反而是 GT 的
+  262%/315% —— 但那全部来自融化过程,不是真实动作。这正是下面"不能只看 motion energy"的由来。</p>
+</figure>
+
+<h3>逐帧退化曲线:塌缩到底发生在第几帧</h3>
+<figure>
+  <img src="assets/sharpness_decay.png" alt="左图为 AgiBot held-out 三个 episode 的逐帧空间细节对数曲线,GT 平稳而生成的断崖下跌;右图为自拍首帧推理的逐帧细节曲线,保持平稳">
+  <figcaption>用 <strong>Laplacian variance</strong>(空间高频能量)逐帧度量,比之前的 detail ratio 敏感得多。
+  <strong>左:</strong>GT(绿)全程平稳在 120–330;zero-shot(蓝)和微调后(红)从 ~124 断崖跌到 3.5,
+  <strong>10 帧内损失 97% 的细节</strong>,之后一直躺平。三个 episode(实线/虚线/点线)完全一致。
+  <strong>右:</strong>自拍首帧的 rollout 稳定保持(pick_place 296→219),对照官方 demo 首帧本身只有 ~18
+  ——官方首帧比自拍照片模糊一个数量级。</figcaption>
+</figure>
+
+<table>
+<thead><tr><th>数据</th><th class="num">f0</th><th class="num">f10</th><th class="num">f40</th><th class="num">f80</th><th>结论</th></tr></thead>
+<tbody>
+<tr><td>GT(650190)</td><td class="num">136.9</td><td class="num">137.3</td><td class="num">127.6</td><td class="num">134.2</td><td><span class="tag good">保持</span></td></tr>
+<tr><td>zero-shot(650190)</td><td class="num">124.4</td><td class="num">3.9</td><td class="num">3.6</td><td class="num">3.6</td><td><span class="tag bad">10 帧内塌</span></td></tr>
+<tr><td>微调后(650190)</td><td class="num">123.6</td><td class="num">4.5</td><td class="num">3.7</td><td class="num">3.5</td><td><span class="tag bad">10 帧内塌</span></td></tr>
+<tr><td>自拍 pick_place</td><td class="num">296.1</td><td class="num">231.5</td><td class="num">247.6</td><td class="num">219.3</td><td><span class="tag good">保持 74%</span></td></tr>
+<tr><td>自拍 fold_paper</td><td class="num">93.5</td><td class="num">83.5</td><td class="num">82.0</td><td class="num">47.4</td><td><span class="tag warn">保持 50%</span></td></tr>
+</tbody>
+</table>
+
 <div class="callout">
 <strong>不能只看 motion energy。</strong>单看上表 motion 从 106% 涨到 139%/161%,像是"微调让动作更接近 GT"。
 这是<strong>假阳性</strong>——融化过程本身就产生和 GT 同量级的帧间变化。
@@ -330,34 +409,51 @@ GT 是 1.105(结构保持),所有生成的都是 0.63–0.66(结构丢失)。
 <p>而且 <strong>zero-shot 官方 SFT 权重在 AgiBot 数据上塌得和微调后一样</strong>(0.651 vs 0.663)。
 LoRA 没让它变坏,但也救不了它。<strong>瓶颈在 LoRA 之前。</strong></p>
 
-<h3>控制强度的域差异</h3>
+<h3>控制强度:一个需要修正的说法</h3>
+<figure>
+  <img src="assets/control_strength.png" alt="横向条形图,按控制信号时间变化量排序,官方 demo 与自制 AgiBot 骨架交错分布">
+  <figcaption>把全部 10 个官方 demo 和我的 3 份 AgiBot 骨架按控制强度排序后,
+  <strong>我的数据(红,0.065–0.092)和官方最弱的几个是重叠的</strong>:
+  官方 <code>basic_pick_place</code> 只有 0.064、<code>fold_unfold_paper</code> 0.084、<code>flip_pages</code> 0.091。
+  而 pick_place 用 0.064 的控制<em>照样不塌</em>。</figcaption>
+</figure>
+
+<div class="callout">
+<strong>所以"控制信号只有官方一半"这个说法要修正。</strong>它只在对比官方<em>平均值</em>(0.132–0.152 那几个强的)时成立。
+和官方最弱的几个比,我的强度是同一档,甚至更高——但对方不塌、我塌。
+<strong>控制强度的绝对值不是塌缩的充分解释。</strong>这是本周排查里最反直觉的一点,也否掉了我原先的主要假设。
+</div>
+
+<h3>已排除的假设</h3>
 <table>
-<thead><tr><th>信号</th><th class="num">时间变化量</th><th class="num">相对官方</th></tr></thead>
+<thead><tr><th>假设</th><th>如何排除</th></tr></thead>
 <tbody>
-<tr><td>官方控制 latent</td><td class="num">0.132–0.152</td><td class="num">100%</td></tr>
-<tr><td>我渲的 AgiBot 骨架</td><td class="num">0.074–0.092</td><td class="num"><strong>~55%</strong></td></tr>
-<tr><td colspan="3" style="border:0;padding-top:14px;color:var(--ink3);font-size:13.5px">底层视频本身:</td></tr>
-<tr><td>官方 head camera 视频</td><td class="num">0.38–0.41</td><td class="num">100%</td></tr>
-<tr><td>AgiBot head camera 视频</td><td class="num">0.28</td><td class="num">~70%</td></tr>
+<tr><td>LoRA 配置/秩不对</td><td>zero-shot(完全不加 LoRA)也塌</td></tr>
+<tr><td>数据量不够</td><td>357 的 40 clip → 362 的 395 clip,塌缩不变</td></tr>
+<tr><td>训练超参(lr/epoch/warmup)</td><td>改过两轮,loss 都正常收敛,塌缩不变</td></tr>
+<tr><td>EMA 缺陷</td><td>v1 修复后重训,塌缩不变;且已改用 checkpoint-N 评测</td></tr>
+<tr><td>控制权重零初始化</td><td>加 <code>--control_init_from</code> 热启动,幅度恢复到 SFT 水平(0.0369 vs 0.0364),塌缩不变</td></tr>
+<tr><td>控制信号强度太弱</td><td>官方 pick_place 用更弱的 0.064 照样不塌(见上图)</td></tr>
+<tr><td>合成骨架 vs 真实视频的分布差异</td><td>官方控制本身也是白底合成骨架图,同一类东西</td></tr>
 </tbody>
 </table>
-<p>SFT 模型是在"控制信号相对视频足够强"的条件下训出来的。给它一个偏弱的控制,它就锚不住,开始漂移。</p>
 
-<h3>发现并修复了一个真实缺陷(但它不是主因)</h3>
+<h3>顺带发现并修复了一个真实缺陷(但它不是主因)</h3>
 <p><code>control_type=add</code> 路径下,harness <strong>每次运行都把 <code>control_patch_embedding</code> 零初始化、
 并把 <code>control_scale</code> 硬编码成 0.1</strong>,丢掉了 SFT checkpoint 里已训练好的控制权重
-(100 步只能恢复到 SFT 幅度的 1/31)。</p>
+(100 步只能恢复到 SFT 幅度的 1/31)。这意味着原先的"zero-shot vs 微调"对比其实<strong>不是预期的实验</strong>:
+zero-shot 用的是完好的控制路径,微调分支用的是从零重学的。</p>
 <p>我加了 <code>--control_init_from</code> 从 SFT 热启动控制路径,验证幅度恢复(0.0369 vs SFT 0.0364)。
-<strong>然后塌缩没有消失</strong>(detail ratio 0.617 → 0.605)。这是个值得保留的正确性修复,但不是瓶颈。</p>
+<strong>然后塌缩没有消失</strong>。这是个值得保留的正确性修复,但不是瓶颈。</p>
 
 <div class="card verdict">
 <h3>微调线的诚实结论</h3>
-<p>"更多数据有没有帮助"——<strong>这轮实验回答不了</strong>。因为所有分支都因为一个上游原因塌缩:
+<p>"更多数据有没有帮助"——<strong>这轮实验回答不了</strong>。所有分支都因为一个上游原因塌缩,
 数据规模不是约束,harness 缺陷也不是。</p>
-<p>已排除的假设:① LoRA 配置 ② 数据量 ③ EMA 缺陷 ④ 控制权重零初始化 ⑤ 训练超参
-⑥ 合成骨架 vs 真实视频的分布差异(官方控制本身也是白底合成骨架图,见下节)。</p>
-<p>仍然可疑的:<strong>骨架的几何正确性</strong>——AgiBot 无内参、相机是拟合的(R² 仅 0.72/0.77),
-骨架可能投影到了错误位置;以及关键点语义是否和官方 21 点定义对齐。这是下一步要验证的第一件事。</p>
+<p><strong>仍然可疑、下一步要查的:</strong>骨架的<strong>几何正确性</strong>。AgiBot 没有相机内参,
+投影用的相机是拟合出来的(R² 仅 0.72/0.77,误差 7–8px),骨架很可能画在了错误的位置上——
+强度对但位置错,模型就无法把它和画面内容对应起来。以及关键点语义/连接拓扑是否和官方 21 点定义一致。
+这是目前唯一没被排除的可疑点,而且验证成本最低。</p>
 </div>
 
 <hr>
@@ -385,20 +481,47 @@ LoRA 没让它变坏,但也救不了它。<strong>瓶颈在 LoRA 之前。</stro
 因为官方 <code>inference_user.py</code> 对 mp4 控制有自己的预处理。改回官方通路后动作幅度才正常。
 </div>
 
-<h3>结果:pick_place</h3>
+<h3>结果:两个动作的完整视频</h3>
+<p class="lead">每段左 = 生成的 rollout,右 = 输入的骨架控制。可以直接看动作是否跟随。</p>
+<div class="vgrid">
+  <figure class="vcard">
+    <p class="ttl">pick_place — 自拍首帧 + 官方骨架控制</p>
+    <video controls muted loop playsinline preload="metadata" src="assets/video/custom_pickplace.mp4"></video>
+    <p class="cap">手从右侧伸向左侧,f60 抓起一个青色物体。自己的场景(可乐罐、纸苹果、鼠标、蓝布)
+    全程稳住,没有漂移和变形。detail ratio 1.047。</p>
+  </figure>
+  <figure class="vcard">
+    <p class="ttl">fold_unfold_paper — 自拍首帧 + 官方骨架控制</p>
+    <video controls muted loop playsinline preload="metadata" src="assets/video/custom_foldpaper.mp4"></video>
+    <p class="cap">双手捏着纸巾,前 60 帧非常稳且有真实折叠形变;f80 变成掀起纸巾,
+    和骨架控制里右手上抬对得上。detail ratio 1.031。</p>
+  </figure>
+</div>
+<p class="vidnote">两段都是 81 帧、480×832、16fps,由官方 <code>inference_user.py</code> 生成,seed 42。</p>
+
+<h3>逐帧对比图</h3>
 <figure>
   <img src="assets/pickplace_rollout_vs_skeleton.png" alt="上排为生成的 rollout 5 帧,下排为对应的输入骨架控制,手部骨架从右向左移动">
-  <figcaption><strong>上排 = 生成的 rollout,下排 = 输入的骨架控制</strong>(f0/f20/f40/f60/f80)。
-  手从右侧伸向左侧,f60 抓起一个青色物体。自己的场景(可乐罐、纸苹果、鼠标、蓝布)全程稳住,
-  没有漂移和变形。控制信号是双手骨架且有明显位移,rollout 跟上了。</figcaption>
+  <figcaption>pick_place:<strong>上排 = 生成的 rollout,下排 = 输入的骨架控制</strong>(f0/f20/f40/f60/f80)。
+  控制信号是双手骨架且有明显位移,rollout 跟上了。</figcaption>
 </figure>
 
-<h3>结果:fold_unfold_paper</h3>
 <figure>
   <img src="assets/foldpaper_rollout_vs_skeleton.png" alt="上排为生成的折纸 rollout 5 帧,下排为对应的双手骨架控制">
-  <figcaption>双手捏着纸巾,前 60 帧非常稳,纸巾有真实的折叠形变;f80 变成掀起纸巾的动作,
-  和骨架控制里右手上抬对得上。清晰度掉到 48%,是两个里退化较重的。</figcaption>
+  <figcaption>fold_unfold_paper:同样上下对照。末帧清晰度掉到 48%,是两个里退化较重的。</figcaption>
 </figure>
+
+<h3>用到的两张自拍首帧</h3>
+<div class="grid2">
+  <figure>
+    <img src="assets/ff_pickplace.jpg" alt="自拍的第一视角照片,蓝色桌布上有可乐罐、纸折苹果、鼠标,右侧有一只手拿着钥匙">
+    <figcaption><code>pick_place.jpg</code> — 1707×1280,自动 resize 到 480×832</figcaption>
+  </figure>
+  <figure>
+    <img src="assets/ff_foldpaper.jpg" alt="自拍的第一视角照片,双手在深蓝色桌面上捏着一张折叠的白色纸巾">
+    <figcaption><code>fold_unfold_paper.jpg</code> — 1280×960</figcaption>
+  </figure>
+</div>
 
 <h3>量化</h3>
 <table>
