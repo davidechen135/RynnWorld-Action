@@ -1,5 +1,5 @@
 #!/bin/bash
-# Minimal 2-GPU SFT training smoke test on 3 shared clips (data/sample_data.json).
+# Minimal 2-GPU SFT training smoke test on 3 shared clips (/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json).
 # Goal: verify the training pipeline runs on dual H20 without OOM/errors, capture
 # loss + VRAM peak + step speed. NOT for convergence.
 set -e
@@ -39,7 +39,7 @@ PROGRAM="finetune.py \
     --checkpointing_steps 1000 \
     --checkpointing_limit 1 \
     --do_validation false \
-    --validation_dir data/sample_data.json \
+    --validation_dir /mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json \
     --cache_dir data \
     --control_type add \
     --learning_rate 2e-5 \

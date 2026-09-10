@@ -9,7 +9,7 @@ vae = AutoencoderKLWan.from_pretrained(MODEL, subfolder="vae").to(device=device,
 lm = torch.tensor(vae.config.latents_mean, device=device).view(1, -1, 1, 1, 1)
 ls = torch.tensor(vae.config.latents_std, device=device).view(1, -1, 1, 1, 1)
 
-z = load_file("data/video_latents/basic_pick_place_0_0_rgb.safetensors")["video_latents"].unsqueeze(0)
+z = load_file("/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/video_latents/basic_pick_place_0_0_rgb.safetensors")["video_latents"].unsqueeze(0)
 z = z.to(device).float() / ls + lm
 with torch.no_grad():
     pix = vae.decode(z.to(dtype)).sample  # [1,3,T,H,W] in [-1,1]

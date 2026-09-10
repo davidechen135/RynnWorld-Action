@@ -58,7 +58,7 @@ RynnWorld-Teleop/
         └── ...
 ```
 
-All training and inference scripts default to relative paths inside the repo (`pretrained/`, `training/`, `data/`). To point at a different location without editing scripts, override via environment variables, e.g.:
+All training and inference scripts default to relative paths inside the repo (`pretrained/`, `training/`, `/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/`). To point at a different location without editing scripts, override via environment variables, e.g.:
 ```bash
 MODEL_PATH=/abs/path/to/Wan2.2-TI2V-5B-Diffusers 
 bash scripts/rynnworld_teleop_pretrain.sh
@@ -127,7 +127,7 @@ Distill the bidirectional Stage 1 teacher into a causal streaming student for re
 ```bash
 MODEL_PATH=pretrained/Wan2.2-TI2V-5B-Diffusers \
 TEACHER_CKPT=<stage1_sft_checkpoint> \
-DATA_PATH=data/sample_data.json \
+DATA_PATH=/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json \
   bash scripts/rynnworld_teleop_streaming_mse.sh
 ```
 - Runs single-step v-flow MSE training with block=3 streaming (Self-Forcing aligned) + FixedSizeCache.
@@ -138,7 +138,7 @@ DATA_PATH=data/sample_data.json \
 ```bash
 MODEL_PATH=pretrained/Wan2.2-TI2V-5B-Diffusers \
 TEACHER_CKPT=<stage1_sft_checkpoint> \
-DATA_PATH=data/sample_data.json \
+DATA_PATH=/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json \
 RESUME_FROM=outputs/mse/mse_sft_<port>/checkpoint-4000 \
   bash scripts/rynnworld_teleop_streaming_dmd.sh
 ```
@@ -273,7 +273,7 @@ python inference_streaming.py \
 **Batch Inference from Dataset**:
 ```bash
 python inference_streaming.py \
-  --data_json data/sample_data.json \
+  --data_json /mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json \
   --checkpoint <streaming_checkpoint> \
   --output_dir results/batch_demo \
   --num_samples_per_dataset 3 \
@@ -301,7 +301,7 @@ We provide **3 sample data points** for quick testing without downloading the fu
 ### Sample Data Structure
 
 ```
-data/
+/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/
 ├── sample_data.json              # Dataset manifest (3 samples)
 ├── video_latents/                # Pre-encoded video latents
 │   ├── assemble_disassemble_jigsaw_puzzle_0_0_rgb.safetensors
@@ -330,15 +330,15 @@ bash scripts/rynnworld_teleop_stage1_lora_single_node.sh
 bash scripts/rynnworld_teleop_stage1_sft_single_node.sh
 ```
 
-These scripts use `data/sample_data.json` and train for a few steps to verify the pipeline works correctly.
+These scripts use `/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json` and train for a few steps to verify the pipeline works correctly.
 
 ### Sample Data Format
 
 Each entry in `sample_data.json`:
 ```json
 {
-  "video_latent_path": "data/video_latents/assemble_disassemble_jigsaw_puzzle_0_0_rgb.safetensors",
-  "text_embedding_path": "data/text_embeddings/assemble_disassemble_jigsaw_puzzle.safetensors"
+  "video_latent_path": "/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/video_latents/assemble_disassemble_jigsaw_puzzle_0_0_rgb.safetensors",
+  "text_embedding_path": "/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/text_embeddings/assemble_disassemble_jigsaw_puzzle.safetensors"
 }
 ```
 

@@ -4891,7 +4891,7 @@ def main():
         cprint("=" * 78, "cyan")
         cprint("[hparams] === training configuration ===", "yellow")
         # Group order: training schedule first (most likely tuned), then DMD knobs,
-        # then data/io (rarely changed). Within each group: alphabetical.
+        # then /mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/io (rarely changed). Within each group: alphabetical.
         _arg_groups = [
             ("schedule", ["num_train_steps", "batch_size", "gradient_accumulation_steps",
                           "learning_rate_gen", "learning_rate_critic", "weight_decay",
@@ -10108,7 +10108,7 @@ def main():
             # that's 8 ranks × ~9.2 GB = ~73 GB simultaneous writes. Some
             # network filesystems (e.g. FUSE-backed object storage) cannot
             # service that and can fail with errors like
-            # "PytorchStreamWriter failed writing file data/2" part-way through
+            # "PytorchStreamWriter failed writing file /mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/2" part-way through
             # the second engine's save.
             #
             # Resume only needs the merged bf16 model state (see resume code

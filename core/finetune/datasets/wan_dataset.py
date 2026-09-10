@@ -79,7 +79,7 @@ class I2VDataset(Dataset):
         video_path = Path(self.videos[index])
         image_path = self.images[index]
 
-        cache_dir = Path(os.environ.get('CACHE_DIR', 'data/cache'))
+        cache_dir = Path(os.environ.get('CACHE_DIR', '/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/cache'))
         filename = video_path.stem
         parent= video_path.parent.name
 
@@ -176,6 +176,9 @@ class EgoVerseDataset22(Dataset):
         self.video_latent_path: List[str] = [item['video_latent_path'] for item in data]
         self.text_embedding_path: List[str] = [item.get('text_embedding_path', None) for item in data]
         self.has_text_embeddings = self.text_embedding_path[0] is not None if len(self.text_embedding_path) > 0 else False
+        self.condition_mode = data[0].get("condition_mode", (
+            "native_trajectory" if data[0].get("trajectory_schema") else "pose_video"
+        ))
 
         from termcolor import cprint
         cprint(f"[EgoVerseDataset22] Loaded {len(self.video_latent_path)} samples (text_embeddings={'yes' if self.has_text_embeddings else 'no'})", 'green')
@@ -203,7 +206,7 @@ class EgoVerseDataset22(Dataset):
         # null_prompt = "First-person egocentric perspective, high-quality video, human hands performing natural and dexterous interactions with the environment. Realistic physics, consistent lighting and shadows on hand-object contact, fluid motion, photorealistic textures, immersive atmosphere."
         null_prompt = prompt
         null_prompt_hash = str(hashlib.sha256(null_prompt.encode()).hexdigest())
-        null_prompt_embedding_path = Path(os.environ.get('PROMPT_EMBEDDINGS_DIR', 'data/prompt_embeddings')) / (null_prompt_hash + ".safetensors")
+        null_prompt_embedding_path = Path(os.environ.get('PROMPT_EMBEDDINGS_DIR', '/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/prompt_embeddings')) / (null_prompt_hash + ".safetensors")
         if null_prompt_embedding_path.exists():
             self.null_prompt_embedding = load_file(null_prompt_embedding_path)["null_prompt_embedding"]
         else:
@@ -214,7 +217,8 @@ class EgoVerseDataset22(Dataset):
 
         cprint(f"✅  Number of slice: {len(self.video_latent_path)}", 'green')
 
-        self.make_null_video()
+        if self.condition_mode == "pose_video":
+            self.make_null_video()
 
         # try:
         #     self.null_prompt_embedding = load_file(null_prompt_embedding_path)["null_prompt_embedding"]
@@ -276,24 +280,29 @@ class EgoVerseDataset22(Dataset):
                     return self.__getitem__(random.randint(0, len(self) - 1))
         try:
             encoded_video = cache_data["video_latents"]
-            encoded_control_video = cache_data["control_video_latents"]
             img_latent = cache_data["img_latent"]
+            if self.condition_mode == "native_trajectory":
+                robot_trajectory = cache_data["robot_trajectory"]
+            else:
+                encoded_control_video = cache_data["control_video_latents"]
         except Exception as e:
             print(f"Error parsing keys in {video_latent_path}: {e}")
             return self.__getitem__(random.randint(0, len(self) - 1))
-
-        if encoded_video.shape[1] == 7:
-            null_control_video = self.short_video_latents
-        elif encoded_video.shape[1] == 21:
-            null_control_video = self.long_video_latents
 
         ret = {
             "null_embedding": self.null_prompt_embedding,
             "img_latent": img_latent,
             "encoded_video": encoded_video,
-            "control_video": encoded_control_video,
-            "null_control_video": null_control_video,
         }
+        if self.condition_mode == "native_trajectory":
+            ret["robot_trajectory"] = robot_trajectory
+        else:
+            if encoded_video.shape[1] == 7:
+                null_control_video = self.short_video_latents
+            elif encoded_video.shape[1] == 21:
+                null_control_video = self.long_video_latents
+            ret["control_video"] = encoded_control_video
+            ret["null_control_video"] = null_control_video
 
         if self.has_text_embeddings:
             text_embedding_path = Path(self.text_embedding_path[index])

@@ -6,7 +6,7 @@
 ## 配置
 - 入口：`finetune.py --training_type sft --model_name rynnworld_teleop`（官方入口）
 - 启动：`accelerate launch --config_file configs_acc/2gpu.yaml`（**DeepSpeed ZeRO-2 + CPU offload**，2 GPU）
-- 数据：`data/sample_data.json`（**3 个共享 clip**：jigsaw_puzzle / basic_pick_place / blowdry_hair，预存 latent + text embedding）
+- 数据：`/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json`（**3 个共享 clip**：jigsaw_puzzle / basic_pick_place / blowdry_hair，预存 latent + text embedding）
 - 分辨率 `81x480x832`，batch_size=1，grad_accum=1，bf16，`--train_steps 20`，seed=42，`control_type=add`
 - EMA 关闭（`ema_start_step` 设很大，避免 smoke 干扰）
 

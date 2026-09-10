@@ -55,7 +55,7 @@ LOG_ARGS=(
 )
 DATA_ARGS=(
     --train_resolution 81x480x832 --do_validation false
-    --validation_dir data/sample_data.json 
+    --validation_dir /mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json 
     --cache_dir data
     --control_type add
     --init_from_checkpoint "${INIT_FROM_CHECKPOINT:-training/rynnworld-teleop-32gpu-SFT-pretrain/checkpoint-3000}"

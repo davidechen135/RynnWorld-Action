@@ -53,7 +53,7 @@ finetune.py \
     --checkpointing_steps 100 \
     --checkpointing_limit 100 \
     --do_validation false \
-    --validation_dir data/sample_data.json \
+    --validation_dir /mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json \
     --cache_dir data \
     --control_type add \
     --learning_rate 2e-5 \

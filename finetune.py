@@ -73,6 +73,23 @@ class Args(BaseModel):
     freeze_lora: bool = False
     control_type: str = "add"
     control_lr: float | None = None
+    # Warm-start the control path from a trained SFT checkpoint dir instead of zero-init.
+    # Must be declared here: Args is a pydantic BaseModel built via cls(**vars(args)),
+    # so an argparse flag with no matching field is silently dropped.
+    control_init_from: str | None = None
+    condition_mode: Literal["pose_video", "native_trajectory"] = "pose_video"
+    native_adapter_init: str | None = None
+    native_baseline_init: str | None = None
+    # Gate D 37D rot6d core != task_362's original 24D trajectory (see
+    # NativeTrajectoryEncoder's default). None preserves existing behavior.
+    native_trajectory_dim: int | None = None
+    native_conditioner_version: Literal["v1", "v2", "v3", "v4", "v5", "v6"] = "v1"
+    action_dropout_prob: float = 0.0
+    action_contrastive_weight: float = 0.0
+    action_contrastive_margin: float = 0.02
+    action_ranking_weight: float = 0.0
+    action_ranking_margin: float = 0.02
+    action_motion_weight: float = 0.0
 
     ########## Regularization ##########
     reg_weight_init: float = 0.01
@@ -229,6 +246,34 @@ class Args(BaseModel):
         parser.add_argument("--control_type", type=str, default='add', help="Control type: add, add-plus, or concat")
         parser.add_argument("--freeze_lora", type=lambda x: (str(x).lower() == 'true'), default=False, help="Freeze LoRA weights during training")
         parser.add_argument("--control_lr", type=float, default=None, help="Learning rate for control_patch_embedding (default: same as learning_rate)")
+        parser.add_argument("--control_init_from", type=str, default=None,
+                            help="Directory holding control_patch_embedding.bin / control_scale.bin "
+                                 "(e.g. pretrained/RynnWorld-Teleop) to warm-start the control path "
+                                 "instead of zero-initializing it. Default None = original zero-init.")
+        parser.add_argument("--condition_mode", choices=["pose_video", "native_trajectory"],
+                            default="pose_video")
+        parser.add_argument("--native_adapter_init", type=str, default=None)
+        parser.add_argument("--native_baseline_init", type=str, default=None,
+                            help="V1 native encoder checkpoint used only as a frozen V3 video baseline")
+        parser.add_argument("--native_trajectory_dim", type=int, default=None,
+                            help="Override NativeTrajectoryEncoder input_dim (default None = 24, "
+                                 "the original task_362 trajectory dim). Gate D's 37D rot6d core "
+                                 "requires --native_trajectory_dim 37.")
+        parser.add_argument("--native_conditioner_version", choices=["v1", "v2", "v3", "v4", "v5", "v6"],
+                            default="v1", help="v2 adds full-sequence encoding and "
+                            "per-block action AdaLN modulation; v1 preserves historical behavior.")
+        parser.add_argument("--action_dropout_prob", type=float, default=0.0,
+                            help="Probability of dropping the complete native action condition. "
+                            "Required for action classifier-free guidance; never drops time points independently.")
+        parser.add_argument("--action_contrastive_weight", type=float, default=0.0)
+        parser.add_argument("--action_contrastive_margin", type=float, default=0.02)
+        parser.add_argument("--action_ranking_weight", type=float, default=0.0,
+                            help="Weight for hinge loss requiring the correct action to denoise "
+                                 "better than a temporally wrong action.")
+        parser.add_argument("--action_ranking_margin", type=float, default=0.02,
+                            help="Required MSE gap: wrong_action_mse >= correct_action_mse + margin.")
+        parser.add_argument("--action_motion_weight", type=float, default=0.0,
+                            help="Weight for V4 action-to-ground-truth latent-motion supervision.")
 
         parser.add_argument("--reg_weight_init", type=float, default=0.01, help="Initial weight for regularization loss")
         parser.add_argument("--reg_weight_decay_steps", type=int, default=0, help="Steps to linearly decay reg_weight to 0; 0 means no decay")

@@ -1,0 +1,19 @@
+{
+  "heldout_task": "3401",
+  "heldout_episode": 1348,
+  "start": 534,
+  "checkpoints": [
+    50,
+    150,
+    300
+  ],
+  "conditions": [
+    "correct",
+    "zero",
+    "reversed",
+    "shifted"
+  ],
+  "seed": 42,
+  "steps": 20,
+  "shared_initial_noise": true
+}

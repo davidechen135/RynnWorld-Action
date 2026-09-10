@@ -475,6 +475,14 @@ class WanCausalTransformer3DModel(WanTransformer3DModel):
         self.control_patch_embedding: Optional[nn.Conv3d] = None
         self.control_scale: Optional[nn.Parameter] = None
 
+        # Three-layer output transformation (UMI stage A). Default "off" keeps the
+        # original single-RGB denoising head path byte-identical. When set to
+        # "concat" or "token" via init_layered_head(), the output section (below)
+        # additionally emits 3 layered latents + alpha + recomposed latent.
+        # See core/layered/layered_head.py and docs/layered_interfaces.md.
+        self.layer_mode: str = "off"
+        self.layered_head: Optional[nn.Module] = None
+
         # 2. Condition embeddings
         # image_embedding_dim=1280 for I2V model
         self.condition_embedder = WanTimeTextImageEmbedding(
@@ -555,6 +563,46 @@ class WanCausalTransformer3DModel(WanTransformer3DModel):
             f"weight=zero, bias=zero, control_scale=0.1 (learnable)",
             "green",
         )
+
+    def init_layered_head(self, layer_mode: str):
+        """Attach a three-layer output head (UMI stage A). See core/layered/.
+
+        layer_mode:
+          "off"    -> no-op, keep single-RGB head (default).
+          "concat" -> LayeredConcatHead : one wide Linear -> 3 layer latents.
+          "token"  -> LayeredTokenHead  : layer_embedding[3] + shared proj_out.
+
+        For "concat" the new head is warm-started from the existing proj_out so
+        every layer initially equals the single-layer prediction. For "token" the
+        layer_embedding is zero-init (same effect). The single-layer path is
+        unchanged; the layered outputs are ADDITIONAL fields on the forward output.
+        """
+        from core.layered.layered_head import LayeredConcatHead, LayeredTokenHead
+
+        if layer_mode == "off":
+            self.layer_mode = "off"
+            self.layered_head = None
+            return
+
+        inner_dim = self.proj_out.in_features
+        out_channels = self.config.out_channels
+        patch_size = self.config.patch_size
+        device = self.proj_out.weight.device
+        dtype = self.proj_out.weight.dtype
+
+        if layer_mode == "concat":
+            head = LayeredConcatHead(inner_dim, out_channels, patch_size).to(device=device, dtype=dtype)
+            head.init_from_proj_out(self.proj_out)
+        elif layer_mode == "token":
+            head = LayeredTokenHead(inner_dim, out_channels, patch_size).to(device=device, dtype=dtype)
+        else:
+            raise ValueError(f"unknown layer_mode={layer_mode!r} (expected off|concat|token)")
+
+        self.layer_mode = layer_mode
+        self.layered_head = head
+        self.layered_head.requires_grad_(True)
+        cprint(f"[model] layered head init: mode={layer_mode}, inner_dim={inner_dim}, "
+               f"out_ch={out_channels}, patch={tuple(patch_size)}", "green")
 
     def forward(
         self,
@@ -695,14 +743,32 @@ class WanCausalTransformer3DModel(WanTransformer3DModel):
         shift = shift.to(hidden_states.device)
         scale = scale.to(hidden_states.device)
 
-        hidden_states = (self.norm_out(hidden_states.float()) * (1 + scale) + shift).type_as(hidden_states)
-        hidden_states = self.proj_out(hidden_states)
+        normed_tokens = (self.norm_out(hidden_states.float()) * (1 + scale) + shift).type_as(hidden_states)
+        hidden_states = self.proj_out(normed_tokens)
 
         hidden_states = hidden_states.reshape(
             batch_size, post_patch_num_frames, post_patch_height, post_patch_width, p_t, p_h, p_w, -1
         )
         hidden_states = hidden_states.permute(0, 7, 1, 4, 2, 5, 3, 6)
         output = hidden_states.flatten(6, 7).flatten(4, 5).flatten(2, 3)
+
+        # Three-layer output bypass (UMI stage A). Only active when a layered head
+        # was attached via init_layered_head(); the single-layer `output` above is
+        # unchanged. Layered results are stashed on the module (not returned) so no
+        # existing caller's return-unpacking is affected. The ablation harness reads
+        # self.last_layered_output. See core/layered/layered_head.py.
+        self.last_layered_output = None
+        if self.layer_mode != "off" and self.layered_head is not None:
+            if self.layer_mode == "concat":
+                self.last_layered_output = self.layered_head(
+                    normed_tokens, batch_size,
+                    post_patch_num_frames, post_patch_height, post_patch_width,
+                )
+            elif self.layer_mode == "token":
+                self.last_layered_output = self.layered_head(
+                    normed_tokens, self.proj_out, batch_size,
+                    post_patch_num_frames, post_patch_height, post_patch_width,
+                )
 
         if USE_PEFT_BACKEND:
             # remove `lora_scale` from each PEFT layer

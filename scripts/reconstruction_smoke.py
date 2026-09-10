@@ -9,9 +9,9 @@ from diffusers import AutoencoderKLWan
 
 MODEL = "pretrained/Wan2.2-TI2V-5B-Diffusers"
 CLIPS = [
-    "data/video_latents/basic_pick_place_0_0_rgb.safetensors",
-    "data/video_latents/assemble_jenga_0_1_rgb.safetensors",
-    "data/video_latents/clean_surface_0_1_rgb.safetensors",
+    "/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/video_latents/basic_pick_place_0_0_rgb.safetensors",
+    "/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/video_latents/assemble_jenga_0_1_rgb.safetensors",
+    "/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/video_latents/clean_surface_0_1_rgb.safetensors",
 ]
 device, dtype = "cuda", torch.bfloat16
 

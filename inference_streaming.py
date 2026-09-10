@@ -17,7 +17,7 @@ Usage (single sample):
 
 Usage (batch from dataset):
     python inference_streaming.py \
-        --data_json data/sample_data.json \
+        --data_json /mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json \
         --checkpoint /path/to/checkpoint \
         --output_dir results/ \
         --num_samples_per_dataset 3 \
@@ -340,7 +340,7 @@ def run_single_sample(args, transformer, vae, scheduler, device, dtype):
     else:
         cprint(f"  no prompt (using null embedding)", "yellow")
         null_prompt_path = os.environ.get(
-            "NULL_PROMPT_PATH", "data/null_prompt_embedding.safetensors"
+            "NULL_PROMPT_PATH", "/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/null_prompt_embedding.safetensors"
         )
         if os.path.exists(null_prompt_path):
             prompt_embeds = load_file(null_prompt_path)["null_prompt_embedding"]
@@ -539,7 +539,7 @@ def run_batch_inference(args, transformer, vae, scheduler, device, dtype):
         if text_embeds is None:
             null_paths = [
                 os.environ.get("NULL_PROMPT_PATH", ""),
-                "data/null_prompt_embedding.safetensors",
+                "/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/null_prompt_embedding.safetensors",
             ]
             for npth in null_paths:
                 if os.path.exists(npth):

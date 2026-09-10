@@ -1,0 +1,15 @@
+{
+  "protocol": "official_clean_first_frame_mask",
+  "conditions": [
+    "correct",
+    "zero",
+    "shuffled",
+    "wrong"
+  ],
+  "only_variable": "33D_action_tensor",
+  "scheduler": "UniPCMultistepScheduler",
+  "cfg_scale": 1.0,
+  "steps": 20,
+  "seed": 42,
+  "initial_noise_shared": true
+}

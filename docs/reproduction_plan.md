@@ -10,7 +10,7 @@
 - ✅ 8 个官方 case 的 SFT 推理已跑通，产出有效 rollout（832×480 / 81 帧 / H.264），画面写实连贯。
 - ✅ 同 case 同 seed 字节级可复现。
 - ✅ checkpoint（`RynnWorld-Teleop`、`RynnWorld-Teleop-Causal`）、`Wan2.2-TI2V-5B-Diffusers` base、
-  `data/video_latents`、`data/text_embeddings` 均在位。
+  `/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/video_latents`、`/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/text_embeddings` 均在位。
 - ⚠️ 未跑 streaming/causal；benchmark 用自写封装而非官方入口；缺 upstream SHA / 环境 / seeds 记录；
   控制注入路径尚未形成工程结论。
 

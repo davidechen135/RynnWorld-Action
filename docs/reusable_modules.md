@@ -71,5 +71,5 @@
 ---
 
 ## 4. dataloader（reconstruction / 数据格式）
-- `core/finetune/datasets/wan_dataset.py`：产出 `*_rgb.safetensors` video latent（见 `data/video_latents/`）。
+- `core/finetune/datasets/wan_dataset.py`：产出 `*_rgb.safetensors` video latent（见 `/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/video_latents/`）。
 - reconstruction smoke（VAE encode→decode）结果见 [reconstruction_smoke.md](reconstruction_smoke.md)。

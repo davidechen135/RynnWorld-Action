@@ -3,7 +3,7 @@
 
 paths:
   # Sample data for quick start
-  data: data/sample_data.json
+  data: /mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json
   
   # Base model path (users need to download Wan2.2-TI2V-5B-Diffusers)
   model: pretrained/Wan2.2-TI2V-5B-Diffusers

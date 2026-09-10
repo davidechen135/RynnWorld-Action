@@ -1,7 +1,7 @@
 # Model Forward Details
 
 `RynnWorld-Teleop` Stage 1 forward 的 tensor 流。已与代码核对（[rynnworld_teleop_trainer.py:158-193](../core/finetune/models/wan_i2v/rynnworld_teleop_trainer.py#L158)），
-非推测。VAE latent 通道数为 **48**（实测 `data/video_latents/*.safetensors`），非早期文档写的 16。
+非推测。VAE latent 通道数为 **48**（实测 `/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/video_latents/*.safetensors`），非早期文档写的 16。
 
 ## Tensor 流
 
