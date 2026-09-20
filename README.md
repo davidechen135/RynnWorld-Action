@@ -1,402 +1,277 @@
-<div align="center">
+# RynnWorld-Action
 
-## RynnWorld-Teleop: An Action-Conditioned World Model for Digital Teleoperation
+### Action-Conditioned Robot World Modeling from a Single Image
 
-</div>
+RynnWorld-Action is a research extension of
+[RynnWorld-Teleop](https://github.com/alibaba-damo-academy/RynnWorld-Teleop)
+that replaces human skeletal control with native robot action sequences.
+Given a robot's first-person observation and a future action trajectory, the
+model generates the corresponding egocentric manipulation video.
 
+> **Research goal:** turn robot control logs into a predictive visual world
+> model without requiring a rendered skeleton or an additional control video.
 
-<p align="center">
-       💫 <a href="https://alibaba-damo-academy.github.io/RynnWorld-Teleop.github.io/"><b>Project Page</b></a>&nbsp;&nbsp; | &nbsp;&nbsp; 🤗 <a href ="https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-Teleop"><b> Hugging Face </b></a> &nbsp;&nbsp; | &nbsp;&nbsp; 🤖 <a href = "https://www.modelscope.cn/models/DAMO_Academy/RynnWorld-Teleop"><b> ModelScope</b></a>  &nbsp;|&nbsp; 🚀 <a href="https://huggingface.co/spaces/Alibaba-DAMO-Academy/RynnWorld-Teleop"><b>Demo</b></a> &nbsp;&nbsp; | &nbsp;&nbsp; 📄 <a href="https://arxiv.org/abs/2607.06558">arXiv</a>&nbsp;&nbsp;
+This repository contains the action representation, conditioning modules,
+training recipes, fixed-noise evaluation tools, and architecture diagnostics
+developed for this direction.
 
-</p>
+## Overview
 
----
+The original RynnWorld-Teleop pipeline conditions a Wan video diffusion model
+on a first frame and a temporal hand-skeleton representation. Our extension
+keeps the strong visual prior of the pretrained Wan DiT while replacing the
+skeleton input with robot-native state and action signals.
 
-## 🌟 Abstract
+```text
+first-person frame ---------------------------> Wan I2V latent stream
+                                                       |
+robot state + future action sequence                    |
+        |                                              |
+        v                                              v
+native action features -> temporal conditioner -> action-conditioned Wan DiT
+                                                       |
+                                                       v
+                                  future egocentric robot video
+```
 
-We introduce **RynnWorld-Teleop**, a robot-centric generative world model that instantiates the paradigm of **digital teleoperation**—decoupling robot data collection from physical hardware constraints. By transforming an operator’s real-time hand-pose stream into high-fidelity egocentric robotic videos from a single reference image, RynnWorld-Teleop enables the scaling of expert trajectories in a purely virtual environment. Our framework integrates depth-aware skeletal conditioning with a progressive human-to-robot training curriculum, allowing it to inherit rich manipulation priors from large-scale human datasets. To support interactive use, we distill the model into a causal, autoregressive student capable of real-time streaming. Policies trained exclusively on RynnWorld-Teleop synthetic data achieve effective zero-shot Sim2Real transfer, demonstrating its power as a high-fidelity data engine for scaling dexterous robotic learning.
+The central design objective is not merely to generate plausible motion, but
+to make the generated future respond to the **identity, magnitude, and temporal
+order** of the supplied action sequence.
 
-<p align="center">
-  <img src="assets/teasor.jpg" style="width: 90%; height: auto;">
-</p>
-<p align="center">
-  <img src="assets/pipeline.jpg" style="width: 90%; height: auto;">
-</p>
+## Highlights
 
----
+- **Native robot action conditioning.** Uses robot proprioception and commands
+  directly instead of converting actions into a human-style skeleton video.
+- **Leakage-aware temporal features.** The current V10/V11 representation
+  combines observed state, target state, relative motion, and velocity while
+  anchoring relative quantities to the observed initial state.
+- **First-frame conditioned generation.** Preserves the original scene and
+  robot appearance through the Wan2.2 TI2V image-conditioning path.
+- **Multiple conditioning paths.** Supports temporal residual conditioning,
+  adaptive normalization, visual gating, and optional spatial action control.
+- **Controlled evaluation.** Includes fixed-seed comparisons for correct,
+  held, shifted, reversed, swapped, and zero-action conditions.
+- **Mechanism-level diagnostics.** Provides layer-wise probes for temporal
+  energy, projection spectrum, conditioning magnitude, spatial gates, and DiT
+  block response.
+- **Reproducible experiment recipes.** Training and evaluation scripts cover
+  single-clip fitting, temporal alignment, spatial control, batch-size sweeps,
+  and LoRA ablations.
 
-## 📰 News
-* **[2026.07.07]**  🔥🔥 Release our <a href="https://arxiv.org/pdf/2607.06558">Technical Report</a> !!
-* **[2026.07.07]**  🔥🔥 Release our code and model checkpoints!!
+## Action Representation
 
+The current native representation is built from a dual-arm robot trajectory:
 
----
+```text
+state(37) + target(37) + relative(37) + velocity(37) = 148 dimensions / step
+```
 
-## 🚀 Quick Start
+The 37-dimensional state uses translation and 6D rotation features for both
+arms. Relative and velocity terms expose motion explicitly, while the observed
+initial state provides the causal reference used to construct the sequence.
 
-### 🔧 Environment Setup
+Implementation:
 
-We use anaconda or miniconda to manage the python environment:
+- `core/control/native_action_features.py`
+- `core/control/native_trajectory_encoder.py`
+- `core/finetune/models/wan_i2v/rynnworld_teleop_trainer.py`
+
+## Architecture
+
+The action conditioner maps `[B, T, D_action]` trajectories into the hidden
+width of the Wan DiT. The repository currently supports four complementary
+interfaces:
+
+1. **Temporal residual path** — projects per-step action features into the DiT
+   hidden space.
+2. **Adaptive normalization path** — produces action-dependent modulation for
+   transformer activations.
+3. **Visual action gate** — couples the action sequence to visual features from
+   the first-person observation.
+4. **Spatial control path** — injects image-space action maps at selected DiT
+   blocks when spatial annotations are available.
+
+These interfaces are intentionally instrumented so that action selectivity can
+be measured at the encoder output, injection point, and intermediate DiT
+blocks—not inferred from training loss alone.
+
+## Repository Layout
+
+```text
+core/control/
+  native_action_features.py          native V10/V11 feature construction
+  native_trajectory_encoder.py       temporal, adaptive, and spatial encoders
+
+core/finetune/
+  datasets/wan_dataset.py            action-aware dataset and collation
+  models/wan_i2v/
+    rynnworld_teleop_trainer.py       Wan action injection and training path
+
+scripts/
+  prepare_native_action_*.py         dataset/cache preparation
+  train_native_action_*.sh           experiment recipes
+  eval_native_action_v2_rot6d37.py   fixed-noise action evaluation
+  diagnose_native_action_signal.py   conditioning-path diagnostics
+  ablate_native_action_injection.py  architecture ablations
+  official_control_positive_control.py
+
+reports/
+  action_conditioning_diagnosis/     reusable causal probes
+  native_action_arch_ab/             architecture A/B measurements
+  native_action_v10_v11_execution/   experiment plans and analysis
+
+docs/
+  upstream_baseline.md               upstream reproduction notes
+  agibot_native_action_plan.md       native action project plan
+  model_forward.md                   model-forward documentation
+```
+
+## Setup
+
+The project builds on the environment and checkpoints released by
+RynnWorld-Teleop.
+
 ```bash
-conda create -n "rynnworld-teleop" python=3.10 -y
-conda activate rynnworld-teleop
-pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+conda create -n rynnworld-action python=3.10 -y
+conda activate rynnworld-action
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
 ```
 
-### 📖 Pretrained Model
+Download the Wan2.2 TI2V backbone and the upstream RynnWorld-Teleop weights as
+described in the
+[official repository](https://github.com/alibaba-damo-academy/RynnWorld-Teleop).
+Paths can be supplied through the existing environment variables or adjusted
+in the experiment launch scripts.
 
-Our model is developed on top of [Wan2.2-TI2V-5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers), please download the pretrained model from Hugging Face and place it in the `pretrained` directory as following structure:
-```
-RynnWorld-Teleop/
-└── pretrained/
-    └── Wan2.2-TI2V-5B-Diffusers/
-        ├── model_index.json
-        ├── scheduler/
-        ├── transformer/
-        ├── vae/
-        └── ...
-```
+## Preparing Native Action Data
 
-All training and inference scripts default to relative paths inside the repo (`pretrained/`, `training/`, `/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/`). To point at a different location without editing scripts, override via environment variables, e.g.:
-```bash
-MODEL_PATH=/abs/path/to/Wan2.2-TI2V-5B-Diffusers 
-bash scripts/rynnworld_teleop_pretrain.sh
-```
-
-Download our pretrained weights from HuggingFace and place them under `./pretrained`:
-```bash
-mkdir -p pretrained/RynnWorld-Teleop
-huggingface-cli download Alibaba-DAMO-Academy/RynnWorld-Teleop --local-dir pretrained/RynnWorld-Teleop
-huggingface-cli download Alibaba-DAMO-Academy/RynnWorld-Teleop-Causal --local-dir pretrained/RynnWorld-Teleop-Causal
-```
-
-Model Zoo
-
-| Model            | HuggingFace | ModelScope |
-| :--------------- | :---------: | :--------: |
-| SFT  | [Link](https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-Teleop)    | [Link](https://www.modelscope.cn/models/DAMO_Academy/RynnWorld-Teleop)   |
-| Causal  | [Link](https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-Teleop-Causal)    | [Link](https://www.modelscope.cn/models/DAMO_Academy/RynnWorld-Teleop-Causal)   |
-
-
----
-
-## 🏋️ Training
-
-We train the teacher model in **three stages**:
-
-### 0️⃣ Stage 0 — Pretrain (egocentric human videos)
-Full-parameter SFT on large-scale egocentric data, **no control video** conditioning. This stage absorbs general manipulation priors.
+The preparation scripts produce cached action-conditioned training windows
+from the robot dataset. Choose the representation required by the experiment:
 
 ```bash
-bash scripts/rynnworld_teleop_pretrain.sh
+# 148D state/target/relative/velocity representation
+python scripts/prepare_native_action_v8_features.py --help
+
+# State-based V10 cache
+python scripts/prepare_native_action_v10_state_256.py --help
+
+# V10 cache with image-space action control
+python scripts/prepare_native_action_v10_spatial.py --help
+
+# Delay-aligned temporal windows
+python scripts/prepare_native_action_delay_aligned.py --help
 ```
 
-Key arguments:
-- `--model_name rynnworld_teleop_pretrain`
-- `--training_type sft`
-- output → `training/rynnworld-teleop-${GPUs}gpu-SFT-pretrain/`
+Dataset locations are intentionally kept outside the repository. Do not commit
+raw videos, cached latents, checkpoints, or private robot data.
 
-### 1️⃣ Stage 1 — Control-conditioned fine-tuning
-Adds a zero-initialized `control_patch_embedding` (Conv3d) and a learnable `control_scale` to inject hand-pose control video into the diffusion process. Two options:
+## Training Recipes
 
-**LoRA** (lightweight, recommended for experimentation):
-```bash
-bash scripts/rynnworld_teleop_stage1_lora.sh
-```
-- `--training_type lora --rank 64 --lora_alpha 64`
-- Trains only LoRA adapters + control modules
-- output → `training/rynnworld-teleop-stage1-lora-${GPUs}gpu/`
-
-**Full SFT** (best quality, more GPU memory):
-```bash
-bash scripts/rynnworld_teleop_stage1_sft.sh
-```
-- `--training_type sft`
-- Trains the whole transformer + control modules
-- output → `training/rynnworld-teleop-stage1-sft-${GPUs}gpu/`
-
-Both variants need the Stage 0 checkpoint as their starting point. The scripts default to `training/rynnworld-teleop-32gpu-SFT-pretrain/checkpoint-3000`; override with an env var if your path differs:
-- LoRA: `INIT_FROM_CHECKPOINT=<pretrain_ckpt> bash scripts/rynnworld_teleop_stage1_lora.sh`
-- SFT:  `RESUME_FROM_CHECKPOINT=<pretrain_ckpt> bash scripts/rynnworld_teleop_stage1_sft.sh`
-
-### 2️⃣ Stage 2 — Streaming Distillation
-Distill the bidirectional Stage 1 teacher into a causal streaming student for real-time interactive generation. Two phases:
-
-**Phase A — MSE warm-up** (bridge bidirectional → causal, single-step velocity regression):
-```bash
-MODEL_PATH=pretrained/Wan2.2-TI2V-5B-Diffusers \
-TEACHER_CKPT=<stage1_sft_checkpoint> \
-DATA_PATH=/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json \
-  bash scripts/rynnworld_teleop_streaming_mse.sh
-```
-- Runs single-step v-flow MSE training with block=3 streaming (Self-Forcing aligned) + FixedSizeCache.
-- Default: 4000 steps on ZeRO-2, effective batch scales with `TOTAL_GPUS × GRADIENT_ACCUMULATION_STEPS` (defaults to 64 × 2 = 128).
-- output → `outputs/mse/mse_sft_<port>/checkpoint-<N>/`
-
-**Phase B — DMD distillation** (4-step adversarial distillation from teacher, resumes from the MSE checkpoint):
-```bash
-MODEL_PATH=pretrained/Wan2.2-TI2V-5B-Diffusers \
-TEACHER_CKPT=<stage1_sft_checkpoint> \
-DATA_PATH=/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json \
-RESUME_FROM=outputs/mse/mse_sft_<port>/checkpoint-4000 \
-  bash scripts/rynnworld_teleop_streaming_dmd.sh
-```
-- Resumes generator + critic from the MSE checkpoint; the critic is auto-initialized from the student weights at the MSE→DMD transition (CausVid recipe).
-- Default: 3000 DMD steps (total `MSE_END_STEP + 3000`).
-- Optional `CRITIC_CKPT=<path/to/critic.pt>` to initialize critic from a pretrained denoiser.
-- output → `outputs/dmd/dmd_<port>/checkpoint-<N>/`
-
-Multi-node example (platform sets `WORLD_SIZE / RANK / MASTER_ADDR / MASTER_PORT / NPROC_PER_NODE`):
-```bash
-WORLD_SIZE=8 RANK=<0..7> MASTER_ADDR=<host> MASTER_PORT=<port> NPROC_PER_NODE=8 \
-  bash scripts/rynnworld_teleop_streaming_dmd.sh
-```
-
-### Resuming training
-Set `--resume_from_checkpoint <full_path_to_checkpoint>` in any script to continue. All optimizer state, scheduler, EMA weights, and random states are restored automatically.
-
----
-
-## 🎬 Inference
-
-We provide **two inference entry points** depending on which stage's checkpoint you want to use.
-
-### 1️⃣ Pretrain model — text + image → video (no control)
+The repository provides small-scale architecture checks as well as longer
+native-action runs:
 
 ```bash
-python inference_pretrain.py \
-  --checkpoint <pretrain_checkpoint_dir> \
-  --output results/pretrain \
-  --data_json <data.json> \
-  --num_samples 20
+# Single-clip fitting: verify that one action/video pair is learnable
+bash scripts/train_native_action_v8_single_clip.sh
+
+# Spatially gated single-clip experiment
+bash scripts/train_native_action_v9_spatial_gate_single_clip.sh
+
+# V10 state-conditioned training
+bash scripts/train_native_action_v10b_state_256.sh
+
+# Temporal alignment experiment
+bash scripts/train_native_action_v11_temporal_alignment.sh
+
+# Controlled optimization ablations
+bash scripts/train_native_action_v10b_batch_sweep.sh
+bash scripts/train_native_action_v10b_lora_unfreeze.sh
 ```
 
-### 2️⃣ Stage 1 model — image + control video → video
+Each launcher exposes the important paths and training settings near the top of
+the script. Review them before starting a run on a new machine.
 
-**This is the main user-facing inference.** Given a first-frame image and a control video (hand-pose / OpenPose mp4), the model generates the corresponding egocentric video.
+## Evaluation
 
-#### SFT checkpoint
-```bash
-python inference_user.py \
-  --image <first_frame.png> \
-  --control_video <control.mp4> \
-  --output results/my_demo \
-  --prompt "Describe the action in one sentence." \
-  --checkpoint <sft_checkpoint_dir> \
-  --mode sft \
-  --control_type add \
-  --seeds "42,123,7"
-```
+Action controllability is evaluated with the first frame, diffusion noise,
+seed, sampler, and checkpoint held fixed. Only the action sequence changes.
 
-#### LoRA checkpoint
-```bash
-python inference_user.py \
-  --image <first_frame.png> \
-  --control_video <control.mp4> \
-  --output results/my_demo_lora \
-  --prompt "Describe the action in one sentence." \
-  --checkpoint <lora_checkpoint_dir> \
-  --mode lora \
-  --lora_rank 64 \
-  --lora_alpha 64 \
-  --control_type add \
-  --seeds "42,123,7"
-```
+Recommended condition set:
 
-**Required arguments**
-- `--image`: first-frame image (jpg/png), automatically resized to 832×480
-- `--control_video`: control video mp4 (hand-pose / OpenPose), sampled/interpolated to 81 frames
-- `--output`: output directory
+| Condition | Purpose |
+|---|---|
+| `correct` | Intended action trajectory |
+| `held` | Constant action/state control |
+| `shifted` | Temporal alignment sensitivity |
+| `reversed` | Temporal-order sensitivity |
+| `swapped` | Action-identity sensitivity |
+| `zero` | Conditioning-presence reference |
 
-**Useful options**
-- `--mode sft|lora`: which checkpoint type to load (default: `sft`)
-- `--prompt`: optional natural-language description (encoded with the T5 text encoder)
-- `--text_embedding`: alternative pre-encoded prompt embedding `.safetensors`
-- `--seeds "42,123,7"`: generate multiple samples in one run
-- `--no_ema`: use raw weights instead of EMA
-- `--guidance_scale`: classifier-free guidance scale (default 1.0)
-- `--control_type add|concat|add-plus`: how the control signal is merged
-
-**Outputs**
-```
-<output_dir>/
-├── generated_seed{N}.mp4   # one per seed
-├── control.mp4             # control signal decoded back to RGB (for sanity check)
-├── control_raw.mp4
-└── input_latent.safetensors  # intermediate, can be deleted
-```
-
----
-
-## 🌊 Streaming Inference (Real-time)
-
-For real-time streaming inference with the distilled causal model, we provide `inference_streaming.py` which supports frame-by-frame generation with KV cache.
-
-### Basic Usage
+Useful entry points:
 
 ```bash
-python inference_streaming.py \
-  --image first_frame.png \
-  --control_video control.mp4 \
-  --checkpoint <streaming_checkpoint> \
-  --output results/streaming_demo
+python scripts/eval_native_action_v2_rot6d37.py --help
+python scripts/diagnose_native_action_signal.py --help
+python scripts/ablate_native_action_injection.py --help
+python scripts/official_control_positive_control.py --help
 ```
 
-### Advanced Options
+We recommend reporting video quality and action selectivity together. A useful
+model should preserve the pretrained visual prior while producing differences
+that are consistent with the requested action rather than sampling noise.
 
-**FP8 Quantization** (Hopper GPUs: H100/H800 only):
-```bash
-python inference_streaming.py \
-  --image first_frame.png \
-  --control_video control.mp4 \
-  --checkpoint <streaming_checkpoint> \
-  --output results/streaming_fp8 \
-  --fp8
-```
-- Automatically detects GPU compute capability
-- Skips with warning on non-Hopper GPUs
-- Requires `torchao` package
+## Current Research Focus
 
-**torch.compile** (faster inference):
-```bash
-python inference_streaming.py \
-  --image first_frame.png \
-  --control_video control.mp4 \
-  --checkpoint <streaming_checkpoint> \
-  --output results/streaming_compiled \
-  --compile
-```
-- First sample includes compile overhead (~30-60s)
-- Subsequent samples run 1.3-1.6× faster
+The current codebase is focused on three questions:
 
-**Batch Inference from Dataset**:
-```bash
-python inference_streaming.py \
-  --data_json /mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json \
-  --checkpoint <streaming_checkpoint> \
-  --output_dir results/batch_demo \
-  --num_samples_per_dataset 3 \
-  --fp8 --compile
-```
+1. How should continuous robot actions be represented so that temporal order
+   remains accessible to a large video diffusion transformer?
+2. Where should the action signal enter the DiT to preserve image quality while
+   enabling strong controllability?
+3. Which fixed-noise counterfactual evaluations best distinguish true action
+   understanding from generic motion generation?
 
-### Streaming Model Architecture
+The included probes and experiment recipes make these questions measurable at
+both the representation and generated-video levels.
 
-The streaming model (`core/streaming/`) implements:
-- **Causal Attention**: Frame-by-frame generation with sliding KV cache
-- **Control Patch Embedding**: Skeleton/hand-pose conditioning
-- **Dynamic Cache**: Efficient memory management for long sequences
+## Roadmap
 
-Key components:
-- `WanCausalTransformer3DModel`: Causal transformer with KV cache support
-- `DynamicCache`: Sliding-window KV cache with sink frame preservation
-- `WanStreamingPipeline`: Frame-by-frame inference pipeline
+- [x] Reproduce the upstream RynnWorld-Teleop training and inference paths
+- [x] Add native dual-arm action feature construction
+- [x] Add temporal, adaptive-normalization, and visual-gating interfaces
+- [x] Add optional spatial action conditioning
+- [x] Build fixed-noise counterfactual evaluation tools
+- [x] Add layer-wise conditioning and projection diagnostics
+- [ ] Consolidate the best-performing conditioning interface
+- [ ] Release a clean training manifest and compact example dataset
+- [ ] Publish quantitative multi-task action-controllability benchmarks
+- [ ] Release pretrained native-action checkpoints
 
----
+## Relationship to RynnWorld-Teleop
 
-## 🧪 Quick Test with Sample Data
+This is an independent research extension built on the open-source
+RynnWorld-Teleop codebase. The upstream project conditions video generation on
+human hand-pose/skeleton sequences; this repository investigates direct robot
+action conditioning for egocentric robot video prediction.
 
-We provide **3 sample data points** for quick testing without downloading the full dataset.
+Upstream resources:
 
-### Sample Data Structure
-
-```
-/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/
-├── sample_data.json              # Dataset manifest (3 samples)
-├── video_latents/                # Pre-encoded video latents
-│   ├── assemble_disassemble_jigsaw_puzzle_0_0_rgb.safetensors
-│   ├── basic_pick_place_0_0_rgb.safetensors
-│   └── blowdry_hair_0_0_rgb.safetensors
-├── text_embeddings/              # Text embeddings
-│   ├── assemble_disassemble_jigsaw_puzzle.safetensors
-│   ├── basic_pick_place.safetensors
-│   └── blowdry_hair.safetensors
-└── prompt_embeddings/            # Null prompt embedding
-    └── e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.safetensors
-```
-
-### Quick Training Test
-
-Test the training pipeline with sample data (single-node, 8 GPUs):
-
-```bash
-# Stage 0: Pretrain (SFT)
-bash scripts/rynnworld_teleop_pretrain_single_node.sh
-
-# Stage 1: Control-conditioned LoRA
-bash scripts/rynnworld_teleop_stage1_lora_single_node.sh
-
-# Stage 1: Control-conditioned Full SFT
-bash scripts/rynnworld_teleop_stage1_sft_single_node.sh
-```
-
-These scripts use `/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/sample_data.json` and train for a few steps to verify the pipeline works correctly.
-
-### Sample Data Format
-
-Each entry in `sample_data.json`:
-```json
-{
-  "video_latent_path": "/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/video_latents/assemble_disassemble_jigsaw_puzzle_0_0_rgb.safetensors",
-  "text_embedding_path": "/mnt/workspace/umi-world-model-lab/datasets/rynnworld-teleop/text_embeddings/assemble_disassemble_jigsaw_puzzle.safetensors"
-}
-```
-
-The video latent file contains:
-- `video_latents`: [C, F, H, W] RGB video latent
-- `control_video_latents`: [C, F, H, W] Control video latent (hand-pose/skeleton)
-
----
-
-## 🎯 Demo Cases
-
-We ship **8 representative cases** under `example/` for quick reproduction. Each case directory contains:
-- `first_frame.png` — reference image
-- `control_video.mp4` — hand-pose / skeleton control signal
-- `text_embedding.safetensors` — pre-encoded prompt (pass via `--text_embedding`)
-
-| # | Directory |
-|---|-----------|
-| 1 | `example/assemble_jenga_001/` |
-| 2 | `example/basic_fold_009/` |
-| 3 | `example/basic_pick_place_000/` |
-| 4 | `example/clean_surface_001/` |
-| 5 | `example/clip_unclip_papers_006/` |
-| 6 | `example/color_004/` |
-| 7 | `example/flip_pages_008/` |
-| 8 | `example/fold_unfold_paper_basic_008/` |
-
-To run all 8 cases at once:
-```bash
-for case in example/*/; do
-  name=$(basename "$case")
-  python inference_user.py \
-    --image "${case}first_frame.png" \
-    --control_video "${case}control_video.mp4" \
-    --text_embedding "${case}text_embedding.safetensors" \
-    --output "results/${name}" \
-    --checkpoint <your_checkpoint> \
-    --mode sft \
-    --control_type add \
-    --seeds "42"
-done
-```
-
----
-
-## 📑 Citation
-
-If you find this project useful, please cite:
-
-```bibtex
-@article{rynnworld_teleop,
-  title  = {RynnWorld-Teleop: An Action-Conditioned World Model for Digital Teleoperation},
-  author = {Haoyu Zhao and Xingyue Zhao and Hangyu Li and Biao Gong and Kehan Li and Siteng Huang and Xin Li and Deli Zhao and Zhongyu Li},
-  journal= {arXiv preprint arXiv:2607.06558},
-  year   = {2026},
-}
-```
+- [RynnWorld-Teleop repository](https://github.com/alibaba-damo-academy/RynnWorld-Teleop)
+- [Project page](https://alibaba-damo-academy.github.io/RynnWorld-Teleop.github.io/)
+- [Technical report](https://arxiv.org/abs/2607.06558)
+- [Model checkpoints](https://huggingface.co/Alibaba-DAMO-Academy/RynnWorld-Teleop)
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE) for details.
+This repository follows the upstream RynnWorld-Teleop license. Third-party
+models, datasets, and checkpoints remain subject to their respective licenses.
+See [LICENSE](LICENSE) and the upstream project for details.
+
+## Acknowledgements
+
+This work builds on
+[RynnWorld-Teleop](https://github.com/alibaba-damo-academy/RynnWorld-Teleop),
+[Wan2.2](https://github.com/Wan-Video/Wan2.2), and the AgiBot robot dataset and
+tooling used in our experiments. We thank the respective authors for releasing
+their code, models, and data resources.
