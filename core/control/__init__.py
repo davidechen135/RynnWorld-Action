@@ -4,6 +4,11 @@ from .native_trajectory_encoder import (
     NativeTrajectoryConditionerV4,
     NativeTrajectoryConditionerV5,
     NativeTrajectoryConditionerV6,
+    NativeTrajectoryConditionerV7,
+    NativeTrajectoryConditionerV8,
+    NativeTrajectoryConditionerV9,
+    NativeTrajectoryConditionerV10,
+    NativeTrajectoryConditionerV11,
     NativeTrajectoryEncoder,
 )
 
@@ -14,4 +19,9 @@ __all__ = [
     "NativeTrajectoryConditionerV4",
     "NativeTrajectoryConditionerV5",
     "NativeTrajectoryConditionerV6",
+    "NativeTrajectoryConditionerV7",
+    "NativeTrajectoryConditionerV8",
+    "NativeTrajectoryConditionerV9",
+    "NativeTrajectoryConditionerV10",
+    "NativeTrajectoryConditionerV11",
 ]

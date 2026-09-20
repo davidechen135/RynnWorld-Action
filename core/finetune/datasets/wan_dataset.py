@@ -179,6 +179,9 @@ class EgoVerseDataset22(Dataset):
         self.condition_mode = data[0].get("condition_mode", (
             "native_trajectory" if data[0].get("trajectory_schema") else "pose_video"
         ))
+        self.has_robot_spatial_control = bool(
+            data and "spatial" in data[0].get("trajectory_schema", "")
+        )
 
         from termcolor import cprint
         cprint(f"[EgoVerseDataset22] Loaded {len(self.video_latent_path)} samples (text_embeddings={'yes' if self.has_text_embeddings else 'no'})", 'green')
@@ -283,6 +286,10 @@ class EgoVerseDataset22(Dataset):
             img_latent = cache_data["img_latent"]
             if self.condition_mode == "native_trajectory":
                 robot_trajectory = cache_data["robot_trajectory"]
+                robot_spatial_control = (
+                    cache_data["robot_spatial_control"]
+                    if self.has_robot_spatial_control else None
+                )
             else:
                 encoded_control_video = cache_data["control_video_latents"]
         except Exception as e:
@@ -296,6 +303,8 @@ class EgoVerseDataset22(Dataset):
         }
         if self.condition_mode == "native_trajectory":
             ret["robot_trajectory"] = robot_trajectory
+            if robot_spatial_control is not None:
+                ret["robot_spatial_control"] = robot_spatial_control
         else:
             if encoded_video.shape[1] == 7:
                 null_control_video = self.short_video_latents

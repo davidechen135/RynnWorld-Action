@@ -73,6 +73,7 @@ class Args(BaseModel):
     freeze_lora: bool = False
     control_type: str = "add"
     control_lr: float | None = None
+    native_projection_lr: float | None = None
     # Warm-start the control path from a trained SFT checkpoint dir instead of zero-init.
     # Must be declared here: Args is a pydantic BaseModel built via cls(**vars(args)),
     # so an argparse flag with no matching field is silently dropped.
@@ -80,16 +81,20 @@ class Args(BaseModel):
     condition_mode: Literal["pose_video", "native_trajectory"] = "pose_video"
     native_adapter_init: str | None = None
     native_baseline_init: str | None = None
+    native_reset_action_outputs: bool = False
     # Gate D 37D rot6d core != task_362's original 24D trajectory (see
     # NativeTrajectoryEncoder's default). None preserves existing behavior.
     native_trajectory_dim: int | None = None
-    native_conditioner_version: Literal["v1", "v2", "v3", "v4", "v5", "v6"] = "v1"
+    native_conditioner_version: Literal["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11"] = "v1"
     action_dropout_prob: float = 0.0
     action_contrastive_weight: float = 0.0
     action_contrastive_margin: float = 0.02
     action_ranking_weight: float = 0.0
     action_ranking_margin: float = 0.02
     action_motion_weight: float = 0.0
+    action_local_motion_weight: float = 0.0
+    action_local_motion_focus: float = 4.0
+    action_spatial_gate_weight: float = 0.0
 
     ########## Regularization ##########
     reg_weight_init: float = 0.01
@@ -246,6 +251,12 @@ class Args(BaseModel):
         parser.add_argument("--control_type", type=str, default='add', help="Control type: add, add-plus, or concat")
         parser.add_argument("--freeze_lora", type=lambda x: (str(x).lower() == 'true'), default=False, help="Freeze LoRA weights during training")
         parser.add_argument("--control_lr", type=float, default=None, help="Learning rate for control_patch_embedding (default: same as learning_rate)")
+        parser.add_argument(
+            "--native_projection_lr",
+            type=float,
+            default=None,
+            help="Optional smaller LR for native residual/AdaLN output projections.",
+        )
         parser.add_argument("--control_init_from", type=str, default=None,
                             help="Directory holding control_patch_embedding.bin / control_scale.bin "
                                  "(e.g. pretrained/RynnWorld-Teleop) to warm-start the control path "
@@ -255,11 +266,15 @@ class Args(BaseModel):
         parser.add_argument("--native_adapter_init", type=str, default=None)
         parser.add_argument("--native_baseline_init", type=str, default=None,
                             help="V1 native encoder checkpoint used only as a frozen V3 video baseline")
+        parser.add_argument("--native_reset_action_outputs", action="store_true",
+                            help="Reset native input-residual and AdaLN projections after loading "
+                            "an adapter. Useful when a single-clip adapter would leak a memorized "
+                            "action-to-video mapping into a multi-episode run.")
         parser.add_argument("--native_trajectory_dim", type=int, default=None,
                             help="Override NativeTrajectoryEncoder input_dim (default None = 24, "
                                  "the original task_362 trajectory dim). Gate D's 37D rot6d core "
                                  "requires --native_trajectory_dim 37.")
-        parser.add_argument("--native_conditioner_version", choices=["v1", "v2", "v3", "v4", "v5", "v6"],
+        parser.add_argument("--native_conditioner_version", choices=["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11"],
                             default="v1", help="v2 adds full-sequence encoding and "
                             "per-block action AdaLN modulation; v1 preserves historical behavior.")
         parser.add_argument("--action_dropout_prob", type=float, default=0.0,
@@ -274,6 +289,12 @@ class Args(BaseModel):
                             help="Required MSE gap: wrong_action_mse >= correct_action_mse + margin.")
         parser.add_argument("--action_motion_weight", type=float, default=0.0,
                             help="Weight for V4 action-to-ground-truth latent-motion supervision.")
+        parser.add_argument("--action_local_motion_weight", type=float, default=0.0,
+                            help="Weight for direct x0 latent-motion reconstruction, focused on moving regions.")
+        parser.add_argument("--action_local_motion_focus", type=float, default=4.0,
+                            help="Additional weight assigned to high-motion latent locations.")
+        parser.add_argument("--action_spatial_gate_weight", type=float, default=0.0,
+                            help="Weight for supervising V9's action spatial gate with GT latent motion.")
 
         parser.add_argument("--reg_weight_init", type=float, default=0.01, help="Initial weight for regularization loss")
         parser.add_argument("--reg_weight_decay_steps", type=int, default=0, help="Steps to linearly decay reg_weight to 0; 0 means no decay")

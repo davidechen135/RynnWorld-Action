@@ -167,6 +167,7 @@ def wan_forward(
     control_type: str = 'add',
     null_condition=False,
     robot_trajectory: torch.Tensor | None = None,
+    robot_spatial_control: torch.Tensor | None = None,
 ) -> torch.Tensor | dict[str, torch.Tensor]:
     batch_size, num_channels, num_frames, height, width = hidden_states.shape
     p_t, p_h, p_w = self.config.patch_size
@@ -180,6 +181,7 @@ def wan_forward(
     has_native = robot_trajectory is not None and hasattr(self, "native_trajectory_encoder")
     has_control = control_video_latent is not None and hasattr(self, 'control_patch_embedding')
     native_modulation = None
+    native_spatial_tokens = None
     if has_native and not null_condition:
         hidden_states = self.patch_embedding(hidden_states)
         native_output = self.native_trajectory_encoder(
@@ -190,7 +192,24 @@ def wan_forward(
         else:
             native_features = native_output
         if native_features is not None:
+            if hasattr(self.native_trajectory_encoder, "spatialize_residual"):
+                native_features = self.native_trajectory_encoder.spatialize_residual(
+                    robot_trajectory,
+                    post_patch_num_frames,
+                    native_features,
+                    hidden_states,
+                )
             hidden_states = hidden_states + native_features.to(hidden_states.dtype)
+        if (
+            robot_spatial_control is not None
+            and hasattr(self.native_trajectory_encoder, "encode_spatial_control")
+        ):
+            native_spatial_tokens = self.native_trajectory_encoder.encode_spatial_control(
+                robot_spatial_control,
+                post_patch_num_frames,
+                post_patch_height,
+                post_patch_width,
+            )
     elif not has_control or null_condition:
         hidden_states = self.patch_embedding(hidden_states)
     elif control_type in ['add', 'add-plus']:
@@ -247,12 +266,30 @@ def wan_forward(
 
     # 4. Transformer blocks
     if torch.is_grad_enabled() and self.gradient_checkpointing:
-        for block in self.blocks:
+        for block_index, block in enumerate(self.blocks):
+            if (
+                native_spatial_tokens is not None
+                and block_index in self.native_trajectory_encoder.spatial_block_indices
+            ):
+                scale_index = self.native_trajectory_encoder.spatial_block_indices.index(block_index)
+                hidden_states = hidden_states + (
+                    self.native_trajectory_encoder.spatial_block_scales[scale_index]
+                    * native_spatial_tokens.to(hidden_states.device, hidden_states.dtype)
+                )
             hidden_states = self._gradient_checkpointing_func(
                 block, hidden_states, encoder_hidden_states, timestep_proj, rotary_emb
             )
     else:
-        for block in self.blocks:
+        for block_index, block in enumerate(self.blocks):
+            if (
+                native_spatial_tokens is not None
+                and block_index in self.native_trajectory_encoder.spatial_block_indices
+            ):
+                scale_index = self.native_trajectory_encoder.spatial_block_indices.index(block_index)
+                hidden_states = hidden_states + (
+                    self.native_trajectory_encoder.spatial_block_scales[scale_index]
+                    * native_spatial_tokens.to(hidden_states.device, hidden_states.dtype)
+                )
             hidden_states = block(hidden_states, encoder_hidden_states, timestep_proj, rotary_emb)
 
     # 5. Output norm, projection & unpatchify
@@ -621,12 +658,17 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
                 NativeTrajectoryConditionerV4,
                 NativeTrajectoryConditionerV5,
                 NativeTrajectoryConditionerV6,
+                NativeTrajectoryConditionerV7,
+                NativeTrajectoryConditionerV8,
+                NativeTrajectoryConditionerV9,
+                NativeTrajectoryConditionerV10,
+                NativeTrajectoryConditionerV11,
                 NativeTrajectoryEncoder,
             )
 
             native_dim = getattr(self.args, "native_trajectory_dim", None)
             native_version = getattr(self.args, "native_conditioner_version", "v1")
-            if native_version in ("v2", "v3", "v4", "v5", "v6"):
+            if native_version in ("v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11"):
                 if native_dim is None:
                     raise ValueError("native conditioner v2/v3 requires --native_trajectory_dim")
                 self.components.high_noise_model.native_trajectory_encoder = (
@@ -636,10 +678,15 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
                         "v4": NativeTrajectoryConditionerV4,
                         "v5": NativeTrajectoryConditionerV5,
                         "v6": NativeTrajectoryConditionerV6,
+                        "v7": NativeTrajectoryConditionerV7,
+                        "v8": NativeTrajectoryConditionerV8,
+                        "v9": NativeTrajectoryConditionerV9,
+                        "v10": NativeTrajectoryConditionerV10,
+                        "v11": NativeTrajectoryConditionerV11,
                     }[native_version](input_dim=native_dim)
                 )
                 baseline_init = getattr(self.args, "native_baseline_init", None)
-                if native_version in ("v3", "v4", "v5", "v6") and baseline_init:
+                if native_version in ("v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11") and baseline_init:
                     old = NativeTrajectoryEncoder(input_dim=33)
                     old.load_state_dict(torch.load(
                         baseline_init, map_location="cpu", weights_only=True
@@ -658,11 +705,69 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
                 native_path = os.path.join(native_init, "native_trajectory_encoder.bin")
                 missing, unexpected = self.components.high_noise_model.native_trajectory_encoder.load_state_dict(
                     torch.load(native_path, map_location="cpu", weights_only=True),
-                    strict=native_version != "v4",
+                    strict=native_version not in ("v4", "v8", "v9", "v10", "v11"),
                 )
                 if native_version == "v4" and (unexpected or set(missing) != {"motion_projection.weight"}):
                     raise RuntimeError(
                         f"unexpected V3->V4 adapter load result: missing={missing}, unexpected={unexpected}"
+                    )
+                if native_version == "v8":
+                    new_prefixes = (
+                        "reference_projection.",
+                        "target_projection.",
+                        "relative_projection.",
+                        "velocity_projection.",
+                        "feature_fusion.",
+                        "temporal_compressor.",
+                    )
+                    if unexpected or any(not key.startswith(new_prefixes) for key in missing):
+                        raise RuntimeError(
+                            f"unexpected V7->V8 adapter load result: missing={missing}, unexpected={unexpected}"
+                        )
+                    # V7's projections expect its old feature basis. Reusing
+                    # them on random V8 branch features injects arbitrary
+                    # motion before learning begins. Keep the frozen video
+                    # baseline and grow the new action connection from zero.
+                    native = self.components.high_noise_model.native_trajectory_encoder
+                    with torch.no_grad():
+                        native.input_residual_projection.weight.zero_()
+                        native.adaln_projection.weight.zero_()
+                    cprint("V8 action output projections reset to zero.", "green")
+                if native_version == "v9":
+                    expected = {
+                        "spatial_gate_bias",
+                        "visual_query_projection.weight",
+                        "action_key_projection.weight",
+                    }
+                    if unexpected or set(missing) != expected:
+                        raise RuntimeError(
+                            f"unexpected V8->V9 adapter load result: missing={missing}, unexpected={unexpected}"
+                        )
+                if native_version == "v10":
+                    expected = {
+                        "spatial_block_scales",
+                        "spatial_stem.0.weight",
+                        "spatial_stem.0.bias",
+                        "spatial_stem.2.weight",
+                    }
+                    if unexpected or set(missing) != expected:
+                        raise RuntimeError(
+                            f"unexpected V8->V10 adapter load result: missing={missing}, unexpected={unexpected}"
+                        )
+                if native_version == "v11":
+                    expected = {"motion_projection.weight"}
+                    if unexpected or set(missing) != expected:
+                        raise RuntimeError(
+                            f"unexpected V10->V11 adapter load result: missing={missing}, unexpected={unexpected}"
+                        )
+                if getattr(self.args, "native_reset_action_outputs", False):
+                    native = self.components.high_noise_model.native_trajectory_encoder
+                    with torch.no_grad():
+                        native.input_residual_projection.weight.zero_()
+                        native.adaln_projection.weight.zero_()
+                    cprint(
+                        "Native action output projections reset after adapter load.",
+                        "green",
                     )
                 cprint(f"Native trajectory adapter initialized from {native_path}", "green")
 
@@ -764,11 +869,72 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
                 if hasattr(native, "base_residual"):
                     native.base_residual.requires_grad_(False)
                     native.base_modulation.requires_grad_(False)
-            if getattr(self.args, "native_conditioner_version", "v1") == "v6":
+            native_version = getattr(self.args, "native_conditioner_version", "v1")
+            if native_version in ("v6", "v7", "v8", "v9", "v10", "v11"):
                 native = self.components.high_noise_model.native_trajectory_encoder
                 native.requires_grad_(False)
-                native.input_projection.requires_grad_(True)
-                cprint("V6: only the local action input MLP is trainable; injection projections are frozen.", "yellow")
+                if native_version in ("v10", "v11"):
+                    for module_name in (
+                        "reference_projection",
+                        "target_projection",
+                        "relative_projection",
+                        "velocity_projection",
+                        "feature_fusion",
+                        "temporal_compressor",
+                        "output_norm",
+                        "input_residual_projection",
+                        "adaln_projection",
+                        "spatial_stem",
+                    ):
+                        getattr(native, module_name).requires_grad_(True)
+                    native.spatial_block_scales.requires_grad_(True)
+                    if native_version == "v11":
+                        native.motion_projection.requires_grad_(True)
+                    cprint(
+                        f"{native_version.upper()}: state/action encoder"
+                        + (", motion alignment head" if native_version == "v11" else "")
+                        + " and multi-depth spatial control branch are trainable.",
+                        "yellow",
+                    )
+                elif native_version == "v9":
+                    native.visual_query_projection.requires_grad_(True)
+                    native.action_key_projection.requires_grad_(True)
+                    native.spatial_gate_bias.requires_grad_(True)
+                    cprint(
+                        "V9: only the visual/action spatial gate is trainable; V8 control is frozen.",
+                        "yellow",
+                    )
+                elif native_version == "v8":
+                    for module_name in (
+                        "reference_projection",
+                        "target_projection",
+                        "relative_projection",
+                        "velocity_projection",
+                        "feature_fusion",
+                        "temporal_compressor",
+                        "output_norm",
+                        "input_residual_projection",
+                        "adaln_projection",
+                    ):
+                        getattr(native, module_name).requires_grad_(True)
+                    cprint(
+                        "V8: factorized action branches, causal compressor, output norm, and "
+                        "injection projections are trainable.",
+                        "yellow",
+                    )
+                elif native_version == "v7":
+                    native.input_projection.requires_grad_(True)
+                    native.output_norm.requires_grad_(True)
+                    native.input_residual_projection.requires_grad_(True)
+                    native.adaln_projection.requires_grad_(True)
+                    cprint(
+                        "V7: local action MLP, output norm, and injection projections are trainable; "
+                        "unused temporal parameters and video baseline are frozen.",
+                        "yellow",
+                    )
+                else:
+                    native.input_projection.requires_grad_(True)
+                    cprint("V6: only the local action input MLP is trainable; injection projections are frozen.", "yellow")
             cprint("Native trajectory mode: old control path frozen and unused.", "green")
 
         self.__prepare_saving_loading_hooks(transformer_lora_config)
@@ -804,10 +970,17 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
         # For SFT, we want to train all the 
         # Split params: control_patch_embedding and control_scale get a smaller lr
         control_patch_params = []
+        native_projection_params = []
         lora_params = []
+        native_projection_lr = getattr(self.args, "native_projection_lr", None)
         for name, param in self.components.high_noise_model.named_parameters():
             if param.requires_grad:
-                if (
+                if native_projection_lr is not None and (
+                    "native_trajectory_encoder.input_residual_projection" in name
+                    or "native_trajectory_encoder.adaln_projection" in name
+                ):
+                    native_projection_params.append(param)
+                elif (
                     'control_patch_embedding' in name
                     or 'native_trajectory_encoder' in name
                     or name == 'control_scale'
@@ -817,16 +990,22 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
                     lora_params.append(param)
 
         # Use different learning rates for control and LoRA
-        control_lr = getattr(self.args, 'control_lr', self.args.learning_rate)
+        control_lr = getattr(self.args, 'control_lr', None) or self.args.learning_rate
         params_to_optimize = [
             {"params": lora_params, "lr": self.args.learning_rate},
             {"params": control_patch_params, "lr": control_lr},
         ]
-        trainable_parameters = lora_params + control_patch_params
+        if native_projection_params:
+            params_to_optimize.append(
+                {"params": native_projection_params, "lr": native_projection_lr}
+            )
+        trainable_parameters = lora_params + control_patch_params + native_projection_params
         self.state.num_trainable_parameters = sum(p.numel() for p in trainable_parameters)
         
         if self.accelerator.is_main_process:
             print(f"\n   >>> Control LR: {control_lr}, LoRA LR: {self.args.learning_rate}")
+            if native_projection_params:
+                print(f"   >>> Native projection LR: {native_projection_lr}")
 
         use_deepspeed_opt = (
             self.accelerator.state.deepspeed_plugin is not None
@@ -892,6 +1071,8 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
         ret = {"encoded_videos": [], "img_latent": [], "null_embedding": []}
         if self.condition_mode == "native_trajectory":
             ret["robot_trajectory"] = []
+            if samples and "robot_spatial_control" in samples[0]:
+                ret["robot_spatial_control"] = []
         else:
             ret.update({"control_video": [], "null_control_video": []})
         for sample in samples:
@@ -904,6 +1085,8 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
             ret["null_embedding"].append(null_embedding)
             if self.condition_mode == "native_trajectory":
                 ret["robot_trajectory"].append(sample["robot_trajectory"])
+                if "robot_spatial_control" in ret:
+                    ret["robot_spatial_control"].append(sample["robot_spatial_control"])
             else:
                 ret["control_video"].append(sample["control_video"])
                 ret["null_control_video"].append(sample["null_control_video"])
@@ -913,6 +1096,8 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
         ret["null_embedding"] = torch.stack(ret["null_embedding"])
         if self.condition_mode == "native_trajectory":
             ret["robot_trajectory"] = torch.stack(ret["robot_trajectory"])
+            if "robot_spatial_control" in ret:
+                ret["robot_spatial_control"] = torch.stack(ret["robot_spatial_control"])
         else:
             ret["control_video"] = torch.stack(ret["control_video"])
             ret["null_control_video"] = torch.stack(ret["null_control_video"])
@@ -1007,6 +1192,12 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
             if self.condition_mode == "native_trajectory"
             else None
         )
+        robot_spatial_control = (
+            batch["robot_spatial_control"].to(device=device, dtype=model_dtype)
+            if self.condition_mode == "native_trajectory"
+            and "robot_spatial_control" in batch
+            else None
+        )
         img_latent = batch["img_latent"].to(model_dtype)
         null_embedding = batch["null_embedding"].to(model_dtype)
         batch_size, num_channels, num_frames, height, width = video_latent.shape
@@ -1092,11 +1283,22 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
             control_video_latent = control_video_latent * mask
 
         import random
-        null_condition = random.random() < conditioning_dropout_prob
-        action_was_dropped = self.condition_mode == "native_trajectory" and null_condition
-        if self.condition_mode == "native_trajectory" and null_condition:
-            robot_trajectory = torch.zeros_like(robot_trajectory)
-            null_condition = False
+        action_drop_mask = None
+        if self.condition_mode == "native_trajectory" and conditioning_dropout_prob > 0.0:
+            # Per-sample dropout: previously a single random.random() draw zeroed the
+            # WHOLE batch's action together, which at batch_size>1 silently degrades
+            # action_dropout_prob from "10% of samples" to "10% of steps, entire batch".
+            action_drop_mask = torch.rand((batch_size,), device=device) < conditioning_dropout_prob
+            keep = (~action_drop_mask).to(dtype=model_dtype)
+            robot_trajectory = robot_trajectory * keep.view(batch_size, 1, 1)
+            if robot_spatial_control is not None:
+                robot_spatial_control = robot_spatial_control * keep.view(batch_size, 1, 1, 1, 1)
+        action_was_dropped = (
+            action_drop_mask
+            if action_drop_mask is not None
+            else torch.zeros(batch_size, dtype=torch.bool, device=device)
+        )
+        null_condition = False
         # =================================
 
         first_frame_mask = torch.ones(1, 1, video_latent.shape[2], video_latent.shape[3], video_latent.shape[4], device=device)
@@ -1119,6 +1321,7 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
             control_type=self.control_type,
             null_condition=null_condition,
             robot_trajectory=robot_trajectory,
+            robot_spatial_control=robot_spatial_control,
         )[0]
 
         # high_noise_pred_uncondition = self.components.high_noise_model(
@@ -1143,17 +1346,83 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
         per_sample_loss = ((high_noise_pred[:, :, 1:].float() - target[:, :, 1:].float()) ** 2).mean(dim=(1, 2, 3, 4))
         loss = (per_sample_loss * timestep_weight).mean()
 
+        # Directly supervise temporal change in the denoised latent. The base
+        # diffusion MSE is dominated by static background pixels, so action can
+        # otherwise become generic motion energy without matching the observed
+        local_motion_weight = float(
+            getattr(self.args, "action_local_motion_weight", 0.0)
+        )
+        if (
+            self.condition_mode == "native_trajectory"
+            and local_motion_weight > 0.0
+            and not bool(action_was_dropped.all())
+        ):
+            predicted_x0 = high_noise_input.float() - sigma_view.float() * high_noise_pred.float()
+            predicted_x0 = torch.cat(
+                (video_latent[:, :, :1].float(), predicted_x0[:, :, 1:]), dim=2
+            )
+            predicted_motion = predicted_x0[:, :, 1:] - predicted_x0[:, :, :-1]
+            target_motion = video_latent[:, :, 1:].float() - video_latent[:, :, :-1].float()
+            motion_energy = target_motion.square().mean(dim=1, keepdim=True).sqrt()
+            normalizer = motion_energy.mean(dim=(2, 3, 4), keepdim=True).clamp_min(1e-6)
+            saliency = (motion_energy / normalizer).clamp(max=5.0)
+            focus = float(getattr(self.args, "action_local_motion_focus", 4.0))
+            spatial_weight = 1.0 + focus * saliency
+            keep = (~action_was_dropped).to(spatial_weight.dtype).view(batch_size, 1, 1, 1, 1)
+            spatial_weight = spatial_weight * keep
+            local_motion_loss = F.smooth_l1_loss(
+                predicted_motion, target_motion, reduction="none"
+            )
+            local_motion_loss = (
+                local_motion_loss * spatial_weight
+            ).sum() / spatial_weight.expand_as(local_motion_loss).sum().clamp_min(1.0)
+            loss = loss + local_motion_weight * local_motion_loss
+            if global_step < 3:
+                print(
+                    "[NATIVE_LOCAL_MOTION] "
+                    f"loss={local_motion_loss.detach().item():.6f} "
+                    f"weight={local_motion_weight:.4f} focus={focus:.2f}",
+                    flush=True,
+                )
+
+        native_encoder = self.components.high_noise_model.native_trajectory_encoder
+        spatial_gate_weight = float(
+            getattr(self.args, "action_spatial_gate_weight", 0.0)
+        )
+        spatial_gate = getattr(native_encoder, "last_spatial_gate", None)
+        if (
+            self.condition_mode == "native_trajectory"
+            and spatial_gate_weight > 0.0
+            and spatial_gate is not None
+            and not bool(action_was_dropped.all())
+        ):
+            target_motion = video_latent[:, :, 1:].float() - video_latent[:, :, :-1].float()
+            target_energy = target_motion.square().mean(dim=1, keepdim=True).sqrt()
+            target_energy = F.adaptive_avg_pool3d(
+                target_energy, spatial_gate[:, :, 1:].shape[2:]
+            )
+            target_mean = target_energy.mean(dim=(2, 3, 4), keepdim=True).clamp_min(1e-6)
+            target_gate = (target_energy / target_mean).clamp(max=2.0)
+            predicted_gate = spatial_gate[:, :, 1:].float()
+            gate_loss = F.smooth_l1_loss(predicted_gate, target_gate)
+            loss = loss + spatial_gate_weight * gate_loss
+            if global_step < 3:
+                print(
+                    "[NATIVE_SPATIAL_GATE] "
+                    f"loss={gate_loss.detach().item():.6f} weight={spatial_gate_weight:.4f}",
+                    flush=True,
+                )
+
         # V4 learns an explicit per-frame correspondence between action and
         # observed video motion.  This auxiliary head cannot improve its loss
         # by corrupting a counterfactual denoiser output, unlike response/rank
         # objectives.  A 4x4 latent grid retains local arm/object motion while
         # keeping the target dimension equal to the 768D action representation.
         motion_weight = float(getattr(self.args, "action_motion_weight", 0.0))
-        native_encoder = self.components.high_noise_model.native_trajectory_encoder
         if (
             self.condition_mode == "native_trajectory"
             and motion_weight > 0.0
-            and not action_was_dropped
+            and not bool(action_was_dropped.all())
             and hasattr(native_encoder, "predict_video_motion")
         ):
             motion_pred = native_encoder.predict_video_motion(
@@ -1180,15 +1449,27 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
             self.condition_mode == "native_trajectory"
             and (contrastive_weight > 0.0 or ranking_weight > 0.0)
             and global_step >= 5
-            and not action_was_dropped
+            and not bool(action_was_dropped.all())
         ):
             # Alternate two hard negatives. Reversal tests temporal direction;
             # a half-window roll tests action-to-frame alignment.
             if global_step % 2 == 0:
                 wrong_trajectory = robot_trajectory.flip(dims=(1,))
+                wrong_spatial_control = (
+                    robot_spatial_control.flip(dims=(2,))
+                    if robot_spatial_control is not None else None
+                )
             else:
                 wrong_trajectory = torch.roll(
                     robot_trajectory, shifts=robot_trajectory.shape[1] // 2, dims=1
+                )
+                wrong_spatial_control = (
+                    torch.roll(
+                        robot_spatial_control,
+                        shifts=robot_spatial_control.shape[2] // 2,
+                        dims=2,
+                    )
+                    if robot_spatial_control is not None else None
                 )
             wrong_pred = self.components.high_noise_model(
                 hidden_states=high_noise_input,
@@ -1201,6 +1482,7 @@ class RynnWorldTeleopTrainer(WanI2VTrainer):
                 control_type=self.control_type,
                 null_condition=False,
                 robot_trajectory=wrong_trajectory,
+                robot_spatial_control=wrong_spatial_control,
             )[0]
             if contrastive_weight > 0.0:
                 response_mse = (

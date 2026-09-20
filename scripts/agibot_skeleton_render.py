@@ -54,10 +54,13 @@ BG = (247, 249, 246)               # official control videos use this off-white
 ARM_RGB = ((30, 40, 200), (200, 30, 40))
 
 
-def decode_small(video_path):
+def decode_small(video_path, max_frames=None):
     """Whole episode at FIT_W x FIT_H -> [T,H,W,3] uint8. ~2s for 4683 frames."""
     cmd = ["ffmpeg", "-v", "error", "-c:v", "libdav1d", "-i", video_path,
-           "-vf", f"scale={FIT_W}:{FIT_H}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+           "-vf", f"scale={FIT_W}:{FIT_H}"]
+    if max_frames is not None:
+        cmd.extend(["-frames:v", str(int(max_frames))])
+    cmd.extend(["-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
     p = subprocess.run(cmd, capture_output=True)
     if p.returncode != 0:
         raise RuntimeError(f"ffmpeg decode failed: {p.stderr[:200]}")
@@ -71,13 +74,13 @@ def quad_features(X):
     return np.c_[x, y, z, x * x, y * y, z * z, x * y, x * z, y * z, o]
 
 
-def fit_camera(video_path, end_pos, percentile=92, min_pixels=25):
+def fit_camera(video_path, end_pos, percentile=92, min_pixels=25, max_frames=None):
     """Fit base-metres -> pixel for each arm off the episode's own motion.
 
     Returns (coeffs [2,10,2], report dict). Coefficients map into the FIT grid;
     callers scale to their own resolution.
     """
-    small = decode_small(video_path).astype(np.float32)
+    small = decode_small(video_path, max_frames=max_frames).astype(np.float32)
     T = min(len(small), len(end_pos))
     small, end_pos = small[:T], end_pos[:T]
 
